@@ -1,0 +1,63 @@
+# =========================
+# Qt Creator user files
+# =========================
+*.pro.user
+*.pro.user.*
+*.qbs.user
+ 
+# =========================
+# Build directories
+# =========================
+build/
+build-*/
+*/build-*/
+*/build/
+ 
+# =========================
+# Make / CMake artifacts
+# =========================
+Makefile
+Makefile.*
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
+compile_commands.json
+ 
+# =========================
+# Object / binary files
+# =========================
+*.o
+*.obj
+*.lo
+*.a
+*.so
+*.dll
+*.dylib
+*.exe
+ 
+# =========================
+# Qt generated files
+# =========================
+moc_*.cpp
+moc_*.h
+qrc_*.cpp
+ui_*.h
+ 
+# =========================
+# Debug / Release folders
+# =========================
+debug/
+release/
+ 
+# =========================
+# Logs & temp
+# =========================
+*.log
+*.tmp
+*.cache
+ 
+# =========================
+# OS-specific
+# =========================
+.DS_Store
+Thumbs.db
