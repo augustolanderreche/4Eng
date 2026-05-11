@@ -1,0 +1,220 @@
+TUTORIAL COMPLETO: BASE DE DATOS EN VPS CONTABO CON PHPMYADMIN Y CONEXION A TU PROYECTO QT
+Fecha: 2026-05-11
+
+Objetivo
+- Instalar y asegurar MariaDB/MySQL en tu VPS Contabo.
+- Instalar phpMyAdmin para gestionar la base por web.
+- Crear base de datos, tabla users y usuario de aplicacion.
+- Conectar esa base con tu proyecto Qt 4eng-Login.
+
+Supuestos
+- VPS con Ubuntu 22.04 o 24.04 (si usas Debian es casi igual).
+- Tienes acceso SSH al servidor.
+- Tienes usuario con permisos sudo.
+
+--------------------------------------------------
+PASO 1) ENTRAR AL VPS Y ACTUALIZAR
+--------------------------------------------------
+Desde tu PC:
+ssh TU_USUARIO@TU_IP_VPS
+
+En el VPS:
+sudo apt update
+sudo apt upgrade -y
+
+--------------------------------------------------
+PASO 2) INSTALAR APACHE, MARIADB, PHP Y PHPMYADMIN
+--------------------------------------------------
+Instala todo junto:
+sudo apt install -y apache2 mariadb-server php libapache2-mod-php php-mysql php-mbstring php-zip php-gd php-json php-curl phpmyadmin
+
+Si durante la instalacion de phpMyAdmin te pregunta:
+- Web server: selecciona apache2.
+- Configurar base con dbconfig-common: selecciona Yes.
+- Define password para usuario interno de phpMyAdmin.
+
+Activa extension y reinicia Apache:
+sudo phpenmod mbstring
+sudo systemctl restart apache2
+
+Comprueba servicios:
+sudo systemctl status apache2 --no-pager
+sudo systemctl status mariadb --no-pager
+
+--------------------------------------------------
+PASO 3) ASEGURAR MARIADB
+--------------------------------------------------
+Ejecuta:
+sudo mysql_secure_installation
+
+Recomendado:
+- Cambiar password de root: Yes
+- Remove anonymous users: Yes
+- Disallow root login remotely: Yes
+- Remove test database: Yes
+- Reload privilege tables: Yes
+
+--------------------------------------------------
+PASO 4) CREAR BASE Y TABLA QUE USA TU APP
+--------------------------------------------------
+Entra a MariaDB:
+sudo mysql -u root -p
+
+Ejecuta SQL:
+CREATE DATABASE login_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+USE login_db;
+
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  role VARCHAR(20) NOT NULL,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  email VARCHAR(120),
+  display_name VARCHAR(120),
+  programming_language VARCHAR(50),
+  age INT
+);
+
+Datos de prueba:
+INSERT INTO users(role, username, password, email, display_name)
+VALUES('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba');
+
+INSERT INTO users(role, username, password, email, display_name, programming_language, age)
+VALUES('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25);
+
+--------------------------------------------------
+PASO 5) CREAR USUARIO MYSQL PARA TU APP QT
+--------------------------------------------------
+Aun dentro de MariaDB, crea usuario de app.
+Opcion rapida (menos segura, pero simple para pruebas):
+CREATE USER 'qtuser'@'%' IDENTIFIED BY 'qtpass';
+GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
+FLUSH PRIVILEGES;
+
+Opcion recomendada (mas segura):
+- Reemplaza X.X.X.X por la IP publica de tu PC de desarrollo.
+CREATE USER 'qtuser'@'X.X.X.X' IDENTIFIED BY 'qtpass';
+GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'X.X.X.X';
+FLUSH PRIVILEGES;
+
+Sal de MariaDB:
+EXIT;
+
+--------------------------------------------------
+PASO 6) HABILITAR PHPMYADMIN EN APACHE
+--------------------------------------------------
+Prueba en navegador:
+http://TU_IP_VPS/phpmyadmin
+
+Si no abre, enlaza config manualmente:
+sudo ln -s /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf
+sudo a2enconf phpmyadmin
+sudo systemctl reload apache2
+
+--------------------------------------------------
+PASO 7) ASEGURAR PHPMYADMIN (MUY IMPORTANTE)
+--------------------------------------------------
+1. Firewall basico:
+sudo ufw allow OpenSSH
+sudo ufw allow 80/tcp
+sudo ufw allow 443/tcp
+sudo ufw enable
+
+2. Ideal: restringir acceso a phpMyAdmin por IP.
+Puedes agregar reglas en Apache para permitir solo tu IP.
+
+3. HTTPS con Certbot (si tienes dominio):
+sudo apt install -y certbot python3-certbot-apache
+sudo certbot --apache -d tu-dominio.com
+
+4. No expongas 3306 globalmente si no es necesario.
+Si puedes, usa tunel SSH para administrar DB y mantener 3306 cerrado.
+
+--------------------------------------------------
+PASO 8) (OPCIONAL) ABRIR MYSQL REMOTO PARA TU APP
+--------------------------------------------------
+Si tu app Qt se conectara directo al VPS, configura MariaDB:
+
+Edita:
+sudo nano /etc/mysql/mariadb.conf.d/50-server.cnf
+
+Busca y cambia:
+bind-address = 127.0.0.1
+por
+bind-address = 0.0.0.0
+
+Reinicia MariaDB:
+sudo systemctl restart mariadb
+
+Firewall: permite 3306 solo desde tu IP de desarrollo (recomendado):
+sudo ufw allow from X.X.X.X to any port 3306 proto tcp
+
+Evita esta regla en produccion:
+sudo ufw allow 3306/tcp
+
+--------------------------------------------------
+PASO 9) CONECTAR TU PROYECTO QT (4eng-Login)
+--------------------------------------------------
+Tu proyecto ya esta preparado para leer variables de entorno:
+- LOGIN_DB_HOST
+- LOGIN_DB_PORT
+- LOGIN_DB_NAME
+- LOGIN_DB_USER
+- LOGIN_DB_PASSWORD
+
+En PowerShell (PC de desarrollo), antes de ejecutar la app:
+$env:LOGIN_DB_HOST = "TU_IP_VPS"
+$env:LOGIN_DB_PORT = "3306"
+$env:LOGIN_DB_NAME = "login_db"
+$env:LOGIN_DB_USER = "qtuser"
+$env:LOGIN_DB_PASSWORD = "qtpass"
+
+Si quieres guardarlas permanentes en Windows:
+setx LOGIN_DB_HOST "TU_IP_VPS"
+setx LOGIN_DB_PORT "3306"
+setx LOGIN_DB_NAME "login_db"
+setx LOGIN_DB_USER "qtuser"
+setx LOGIN_DB_PASSWORD "qtpass"
+
+Luego abre nueva terminal/Qt Creator para que lea los valores.
+
+--------------------------------------------------
+PASO 10) PRUEBA COMPLETA
+--------------------------------------------------
+1. Abre phpMyAdmin y verifica que existe login_db y tabla users.
+2. Inicia tu app Qt.
+3. Intenta login con:
+   - empresa / empresa123
+   - user / user123
+4. Prueba registrar un usuario nuevo y confirma en phpMyAdmin que aparece en users.
+
+--------------------------------------------------
+SOLUCION DE PROBLEMAS
+--------------------------------------------------
+A) Error en app: Driver not loaded / QMYSQL
+- Falta plugin QMYSQL compatible con tu version de Qt.
+- Instala/compila el plugin correspondiente a tu kit.
+
+B) Error acceso denegado para qtuser
+- Revisa host permitido del usuario MySQL (%, o tu IP exacta).
+- Revisa password y grants.
+
+C) phpMyAdmin no abre
+- Verifica Apache activo.
+- Verifica configuracion enlazada de phpMyAdmin.
+- Revisa firewall UFW (80/443).
+
+D) Timeout al conectar desde Qt
+- Revisa si 3306 esta permitido desde tu IP.
+- Revisa bind-address.
+- Revisa reglas de firewall externo de Contabo si aplican.
+
+--------------------------------------------------
+RECOMENDACION FINAL DE SEGURIDAD
+--------------------------------------------------
+Tu app actual guarda password en texto plano. Para produccion:
+- Usa hash de password (Argon2, bcrypt o PBKDF2).
+- Idealmente no conectes Qt directo a MySQL publica.
+- Usa API intermedia (backend) y DB privada.
+
+FIN

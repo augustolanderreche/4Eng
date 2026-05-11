@@ -1,0 +1,292 @@
+PROJECT: 4eng-Login
+LAST UPDATED: 2026-05-11
+STACK: Qt Widgets + Qt SQL (QMYSQL) + C++17 + qmake
+WORKSPACE ROOT: c:\Users\aland\4Eng\Login
+OS (CURRENT DEV MACHINE): Windows
+
+==================================================
+1) QUICK SUMMARY
+==================================================
+This is a desktop login/registration app built with Qt Widgets.
+It connects directly to MySQL/MariaDB using Qt SQL driver QMYSQL.
+Users can:
+- Log in with username/password.
+- Register as Empresa (company) or Usuario (individual).
+- Be redirected after login by role:
+  - role == "Empresa" -> EmpresaWindow
+  - any other role -> UserWindow
+
+Database credentials are centralized and read from environment variables
+through databaseconfig.h.
+
+==================================================
+2) CURRENT FILE STRUCTURE (SOURCE LEVEL)
+==================================================
+- 4eng-Login.pro
+- main.cpp
+- databaseconfig.h
+- mainwindow.h
+- mainwindow.cpp
+- registerwindow.h
+- registerwindow.cpp
+- empresawindow.h
+- empresawindow.cpp
+- userwindow.h
+- userwindow.cpp
+- db_connection_instructions.txt
+- readme.md (currently empty/whitespace)
+- build/ (generated artifacts, may contain stale old names)
+
+Important rename already done:
+- old: adminwindow.h/.cpp + AdminWindow
+- new: empresawindow.h/.cpp + EmpresaWindow
+
+==================================================
+3) BUILD AND PROJECT CONFIG
+==================================================
+File: 4eng-Login.pro
+- QT += widgets sql
+- CONFIG += c++17
+- TEMPLATE = app
+- TARGET = 4eng-Login
+
+SOURCES:
+- main.cpp
+- mainwindow.cpp
+- registerwindow.cpp
+- empresawindow.cpp
+- userwindow.cpp
+
+HEADERS:
+- databaseconfig.h
+- empresawindow.h
+- mainwindow.h
+- registerwindow.h
+- userwindow.h
+
+Generated build directory:
+- build/Desktop_Qt_6_11_0_MinGW_64_bit-Debug/...
+Contains generated files (moc_*.cpp). Some stale generated files may still
+reference old adminwindow naming until clean rebuild.
+
+==================================================
+4) UI FLOW / NAVIGATION
+==================================================
+Entry point:
+- main.cpp creates QApplication, sets Fusion style and a global dark stylesheet,
+  then shows MainWindow.
+
+MainWindow behavior:
+- Displays login form (username, password).
+- Buttons: Entrar, Registrar.
+- Entrar -> attemptLogin().
+- Registrar -> opens RegisterWindow.
+
+Login logic in MainWindow:
+1. Validate non-empty fields.
+2. validateCredentials(username, password) checks users table.
+3. If success:
+   - role = getRole(username)
+   - displayName = getDisplayName(username), fallback to username if empty
+   - role == "Empresa" => openEmpresaWindow(displayName)
+   - else => openUserWindow(displayName)
+
+RegisterWindow behavior:
+- QTabWidget with two tabs:
+  - Empresa
+  - Usuario
+
+Empresa registration fields:
+- username
+- password
+- email
+Validation:
+- no empty fields
+- email must contain '@'
+- username must not already exist
+Insert into DB with role "Empresa" and display_name=username.
+
+Usuario registration fields:
+- firstName
+- lastName
+- username
+- password
+- language (combo)
+- email
+- age
+Validation:
+- all required fields present
+- email contains '@'
+- age 10..120
+- username unique
+Insert with role "Usuario" and display_name="firstName lastName".
+
+Post-login windows:
+- EmpresaWindow: simple welcome label "Hola Empresa <displayName>"
+- UserWindow: simple welcome label "Hola Usuario <displayName>"
+
+==================================================
+5) DATABASE CONNECTION MODEL
+==================================================
+Connection helper file:
+- databaseconfig.h
+
+Single connection name:
+- login_connection
+
+Function:
+- DatabaseConfig::getLoginConnection(const QString &connectionName = "login_connection")
+
+Behavior:
+- Reuses existing named connection if already present.
+- Otherwise creates QMYSQL connection and configures from environment.
+
+Environment variables used:
+- LOGIN_DB_HOST (default: 127.0.0.1)
+- LOGIN_DB_PORT (default: 3306)
+- LOGIN_DB_NAME (default: login_db)
+- LOGIN_DB_USER (default: qtuser)
+- LOGIN_DB_PASSWORD (default: qtpass)
+
+Who uses it:
+- MainWindow::setupDatabase()
+- RegisterWindow constructor
+
+Note:
+- The app opens DB lazily before queries (if !m_db.isOpen(), then m_db.open()).
+
+==================================================
+6) DATABASE SCHEMA EXPECTED BY APP
+==================================================
+Database:
+- login_db
+
+Table:
+- users
+
+Required SQL schema:
+CREATE TABLE users (
+  id INT AUTO_INCREMENT PRIMARY KEY,
+  role VARCHAR(20) NOT NULL,
+  username VARCHAR(50) NOT NULL UNIQUE,
+  password VARCHAR(255) NOT NULL,
+  email VARCHAR(120),
+  display_name VARCHAR(120),
+  programming_language VARCHAR(50),
+  age INT
+);
+
+Columns actually queried/used by code:
+- login query: username, password
+- role routing: role
+- greeting name: display_name
+- registration insert: role, username, password, email, display_name,
+  programming_language, age
+
+==================================================
+7) SQL OPERATIONS USED IN CODE
+==================================================
+MainWindow:
+- SELECT COUNT(*) FROM users WHERE username = :user AND password = :pass
+- SELECT display_name FROM users WHERE username = :user LIMIT 1
+- SELECT role FROM users WHERE username = :user LIMIT 1
+
+RegisterWindow:
+- SELECT COUNT(*) FROM users WHERE username = :user
+- INSERT INTO users (...)
+
+==================================================
+8) SECURITY STATUS (IMPORTANT)
+==================================================
+Current state:
+- Passwords are stored and checked as plain text.
+- Direct DB connection from client app to VPS DB.
+
+Security implications:
+- Not production-safe for real users.
+- Vulnerable if DB credentials are leaked from client environment.
+
+Recommended improvements (future):
+1. Hash passwords (Argon2/bcrypt/PBKDF2) + salt.
+2. Move auth to backend API (server-side), avoid direct client DB access.
+3. Restrict DB user permissions and host allowlist tightly.
+4. Use TLS or secure tunnel where possible.
+
+==================================================
+9) DEPENDENCIES / RUNTIME REQUIREMENTS
+==================================================
+Qt modules needed:
+- widgets
+- sql
+
+Driver requirement:
+- QMYSQL plugin compatible with installed Qt build.
+
+If QMYSQL missing, DB open fails and status label shows DB error.
+
+==================================================
+10) ENVIRONMENT EXAMPLE (POWERSHELL)
+==================================================
+Session-only variables:
+$env:LOGIN_DB_HOST = "IP_DEL_VPS"
+$env:LOGIN_DB_PORT = "3306"
+$env:LOGIN_DB_NAME = "login_db"
+$env:LOGIN_DB_USER = "qtuser"
+$env:LOGIN_DB_PASSWORD = "qtpass"
+
+==================================================
+11) USER-FACING TEXT / LANGUAGE
+==================================================
+App strings are Spanish (tr() used).
+Examples:
+- "Iniciar sesion"
+- "Registrar"
+- "Panel empresa"
+- "Panel usuario"
+
+Role matching is string-based:
+- exact check: role == tr("Empresa")
+Any other role routes to UserWindow.
+
+==================================================
+12) KNOWN BEHAVIOR DETAILS / EDGE CASES
+==================================================
+- If DB cannot open, status label shows detailed SQL error text.
+- On invalid login credentials, user gets explicit message.
+- Registration clears fields on success.
+- Register window opens without closing login window.
+- Empresa/User windows close login window when opened from successful login.
+- There are helper methods in MainWindow (userExists/createUserRecord) not used
+  by current MainWindow flow; similar methods are actively used in RegisterWindow.
+
+==================================================
+13) WHAT CHANGED RECENTLY
+==================================================
+1. DB setup refactor:
+- Replaced hardcoded placeholders in windows with shared helper (databaseconfig.h).
+- Credentials now come from env vars with defaults.
+
+2. Naming refactor:
+- Renamed AdminWindow to EmpresaWindow.
+- Renamed files adminwindow.* to empresawindow.*.
+- Updated includes and .pro references accordingly.
+
+3. Instructions update:
+- db_connection_instructions.txt now documents env-var approach.
+
+==================================================
+14) CLEAN REBUILD NOTE
+==================================================
+If stale generated files mention old adminwindow names:
+- Clean build directory and rebuild.
+This is expected after file/class rename in Qt projects.
+
+==================================================
+15) NEXT CHAT HANDOFF PROMPT (OPTIONAL)
+==================================================
+Suggested message to next chat:
+"Lee PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt y propon/me implementa mejoras
+prioritarias en seguridad (hash de password), arquitectura (API intermedia),
+y UX del flujo login/registro manteniendo Qt Widgets."
+
+END OF CONTEXT FILE

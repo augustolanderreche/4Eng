@@ -1,7 +1,8 @@
 #include "mainwindow.h"
 #include "registerwindow.h"
-#include "adminwindow.h"
+#include "empresawindow.h"
 #include "userwindow.h"
+#include "databaseconfig.h"
 
 #include <QApplication>
 #include <QFrame>
@@ -83,16 +84,7 @@ void MainWindow::setupUi()
 
 void MainWindow::setupDatabase()
 {
-    if (QSqlDatabase::contains("login_connection")) {
-        m_db = QSqlDatabase::database("login_connection");
-    } else {
-        m_db = QSqlDatabase::addDatabase("QMYSQL", "login_connection");
-        m_db.setHostName("TU_IP_VPS");
-        m_db.setPort(3306);
-        m_db.setDatabaseName("nombre_base");
-        m_db.setUserName("usuario_db");
-        m_db.setPassword("clave_db");
-    }
+    m_db = DatabaseConfig::getLoginConnection();
 }
 
 bool MainWindow::validateCredentials(const QString &username, const QString &password)
@@ -253,7 +245,7 @@ void MainWindow::openRegisterWindow()
 
 void MainWindow::openEmpresaWindow(const QString &displayName)
 {
-    auto *empresaWindow = new AdminWindow(displayName);
+    auto *empresaWindow = new EmpresaWindow(displayName);
     empresaWindow->setAttribute(Qt::WA_DeleteOnClose);
     empresaWindow->show();
     close();

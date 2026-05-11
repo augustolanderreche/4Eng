@@ -39,13 +39,22 @@ Paso a paso para conectar el login Qt a una base de datos en tu VPS de Contabo:
      GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
      FLUSH PRIVILEGES;
 
-6. Modifica el código Qt con tus credenciales reales:
-   - En mainwindow.cpp cambia:
-       m_db.setHostName("TU_IP_VPS");
-       m_db.setDatabaseName("nombre_base");
-       m_db.setUserName("usuario_db");
-       m_db.setPassword("clave_db");
-   - Usa los valores reales de tu VPS: IP, nombre de base de datos, usuario y contraseña.
+6. Configura las credenciales en variables de entorno (recomendado):
+   - El proyecto ahora lee estos valores al iniciar:
+      LOGIN_DB_HOST
+      LOGIN_DB_PORT
+      LOGIN_DB_NAME
+      LOGIN_DB_USER
+      LOGIN_DB_PASSWORD
+   - Valores por defecto si no defines variables:
+      host=127.0.0.1, port=3306, db=login_db, user=qtuser, pass=qtpass
+   - Ejemplo en PowerShell (solo sesión actual):
+      $env:LOGIN_DB_HOST = "IP_DEL_VPS"
+      $env:LOGIN_DB_PORT = "3306"
+      $env:LOGIN_DB_NAME = "login_db"
+      $env:LOGIN_DB_USER = "qtuser"
+      $env:LOGIN_DB_PASSWORD = "qtpass"
+   - Si quieres hacerlo permanente en Windows, usa setx para cada variable.
 
 7. Instala el plugin Qt MySQL en tu máquina de desarrollo:
    - En Linux con Qt: sudo apt install libqt5sql5-mysql
@@ -65,5 +74,5 @@ Resumen:
 - Crea la base de datos y tabla `users` con campos de registro.
 - Permite conexión remota o usa un túnel SSH.
 - Crea un usuario MySQL seguro para la app.
-- Configura `mainwindow.cpp` con los datos reales.
+- Configura variables de entorno con los datos reales del VPS.
 - Compila y prueba login y registro.

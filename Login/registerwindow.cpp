@@ -1,4 +1,5 @@
 #include "registerwindow.h"
+#include "databaseconfig.h"
 
 #include <QComboBox>
 #include <QFrame>
@@ -18,16 +19,7 @@
 RegisterWindow::RegisterWindow(QWidget *parent)
     : QMainWindow(parent)
 {
-    if (QSqlDatabase::contains("login_connection")) {
-        m_db = QSqlDatabase::database("login_connection");
-    } else {
-        m_db = QSqlDatabase::addDatabase("QMYSQL", "login_connection");
-        m_db.setHostName("TU_IP_VPS");
-        m_db.setPort(3306);
-        m_db.setDatabaseName("nombre_base");
-        m_db.setUserName("usuario_db");
-        m_db.setPassword("clave_db");
-    }
+    m_db = DatabaseConfig::getLoginConnection();
     setupUi();
 }
 

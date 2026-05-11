@@ -8,11 +8,12 @@ SOURCES += \
     main.cpp \
     mainwindow.cpp \
     registerwindow.cpp \
-    adminwindow.cpp \
+    empresawindow.cpp \
     userwindow.cpp
 
 HEADERS += \
+    databaseconfig.h \
+    empresawindow.h \
     mainwindow.h \
     registerwindow.h \
-    adminwindow.h \
     userwindow.h
