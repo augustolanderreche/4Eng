@@ -19,6 +19,12 @@ Users can:
 Database credentials are centralized and read from environment variables
 through databaseconfig.h.
 
+IMPORTANT OPERATIONS STATUS (VPS):
+- phpMyAdmin was enabled and tested successfully from browser.
+- Later it was intentionally disabled in Apache for security (current result: /phpmyadmin returns 404 Not Found).
+- UFW now allows 80/443 (web access control moved to Apache config state).
+- Docker exists on VPS with project containers observed (vps-api-1, vps-db-1); phpMyAdmin in this setup was not served from Docker.
+
 ==================================================
 2) CURRENT FILE STRUCTURE (SOURCE LEVEL)
 ==================================================
@@ -34,6 +40,9 @@ through databaseconfig.h.
 - userwindow.h
 - userwindow.cpp
 - db_connection_instructions.txt
+- tutorial_contabo_phpmyadmin_paso_a_paso.txt
+- documentacion_base_datos_login_db.txt
+- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt
 - readme.md (currently empty/whitespace)
 - build/ (generated artifacts, may contain stale old names)
 
@@ -161,10 +170,21 @@ Note:
 Database:
 - login_db
 
-Table:
+App runtime dependency (strict minimum):
 - users
 
-Required SQL schema:
+Current VPS schema (created for future backend too):
+- users
+- engineer_profiles
+- company_profiles
+- cv_documents
+- job_posts
+- applications
+- ai_evaluations
+- training_recommendations
+- admin_audit_logs
+
+Minimum users table required by current Qt app:
 CREATE TABLE users (
   id INT AUTO_INCREMENT PRIMARY KEY,
   role VARCHAR(20) NOT NULL,
@@ -183,6 +203,11 @@ Columns actually queried/used by code:
 - registration insert: role, username, password, email, display_name,
   programming_language, age
 
+Seed data currently present in users (test accounts):
+- Empresa / empresa / empresa123
+- Usuario / user / user123
+- Admin / admin / admin123
+
 ==================================================
 7) SQL OPERATIONS USED IN CODE
 ==================================================
@@ -200,17 +225,20 @@ RegisterWindow:
 ==================================================
 Current state:
 - Passwords are stored and checked as plain text.
-- Direct DB connection from client app to VPS DB.
+- Direct DB connection from client app to VPS DB (current Qt phase).
+- phpMyAdmin endpoint currently disabled (404) to prevent public access.
 
 Security implications:
 - Not production-safe for real users.
 - Vulnerable if DB credentials are leaked from client environment.
+- Test credentials in plain text must be replaced/removed before production.
 
 Recommended improvements (future):
 1. Hash passwords (Argon2/bcrypt/PBKDF2) + salt.
 2. Move auth to backend API (server-side), avoid direct client DB access.
 3. Restrict DB user permissions and host allowlist tightly.
 4. Use TLS or secure tunnel where possible.
+5. Keep phpMyAdmin disabled by default; enable only for maintenance windows.
 
 ==================================================
 9) DEPENDENCIES / RUNTIME REQUIREMENTS
@@ -259,6 +287,10 @@ Any other role routes to UserWindow.
 - There are helper methods in MainWindow (userExists/createUserRecord) not used
   by current MainWindow flow; similar methods are actively used in RegisterWindow.
 
+Infra behavior notes:
+- If phpMyAdmin is re-enabled in Apache, route is typically /phpmyadmin/ (with trailing slash due to redirect).
+- If disabled via a2disconf phpmyadmin, external users see Apache 404 on /phpmyadmin.
+
 ==================================================
 13) WHAT CHANGED RECENTLY
 ==================================================
@@ -274,6 +306,21 @@ Any other role routes to UserWindow.
 3. Instructions update:
 - db_connection_instructions.txt now documents env-var approach.
 
+4. New infra + DB docs added:
+- tutorial_contabo_phpmyadmin_paso_a_paso.txt
+- documentacion_base_datos_login_db.txt
+
+5. VPS web/security operations completed:
+- Apache + phpMyAdmin installed and validated.
+- UFW configured to allow 80/443.
+- phpMyAdmin later disabled in Apache for safety when not in use.
+
+6. Apache information leakage hardening discussed:
+- Recommended in /etc/apache2/conf-available/security.conf:
+  - ServerTokens Prod
+  - ServerSignature Off
+  - TraceEnable Off
+
 ==================================================
 14) CLEAN REBUILD NOTE
 ==================================================
@@ -285,8 +332,8 @@ This is expected after file/class rename in Qt projects.
 15) NEXT CHAT HANDOFF PROMPT (OPTIONAL)
 ==================================================
 Suggested message to next chat:
-"Lee PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt y propon/me implementa mejoras
-prioritarias en seguridad (hash de password), arquitectura (API intermedia),
-y UX del flujo login/registro manteniendo Qt Widgets."
+"Lee PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt y documentacion_base_datos_login_db.txt.
+Necesito implementar migracion a password hash, separar login hacia backend FastAPI,
+y definir endpoints para users/job_posts/applications/ai_evaluations." 
 
 END OF CONTEXT FILE

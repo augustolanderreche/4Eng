@@ -97,7 +97,7 @@ bool MainWindow::validateCredentials(const QString &username, const QString &pas
     }
 
     QSqlQuery query(m_db);
-    query.prepare("SELECT COUNT(*) FROM users WHERE username = :user AND password = :pass");
+    query.prepare("SELECT COUNT(*) FROM users WHERE username = :user AND (password = SHA2(:pass, 256) OR password = :pass)");
     query.bindValue(":user", username);
     query.bindValue(":pass", password);
 
@@ -186,14 +186,14 @@ bool MainWindow::createUserRecord(const QString &role,
 
     QSqlQuery query(m_db);
     if (programmingLanguage.isEmpty()) {
-        query.prepare("INSERT INTO users (role, username, password, email, display_name) VALUES (:role, :username, :password, :email, :display_name)");
+        query.prepare("INSERT INTO users (role, username, password, email, display_name) VALUES (:role, :username, SHA2(:password, 256), :email, :display_name)");
         query.bindValue(":role", role);
         query.bindValue(":username", username);
         query.bindValue(":password", password);
         query.bindValue(":email", email);
         query.bindValue(":display_name", displayName);
     } else {
-        query.prepare("INSERT INTO users (role, username, password, email, display_name, programming_language, age) VALUES (:role, :username, :password, :email, :display_name, :programming_language, :age)");
+        query.prepare("INSERT INTO users (role, username, password, email, display_name, programming_language, age) VALUES (:role, :username, SHA2(:password, 256), :email, :display_name, :programming_language, :age)");
         query.bindValue(":role", role);
         query.bindValue(":username", username);
         query.bindValue(":password", password);

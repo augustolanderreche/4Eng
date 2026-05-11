@@ -1,0 +1,213 @@
+PENDIENTES DEL PROYECTO FINAL - 4eng-Login
+Fecha: 2026-05-11
+Estado: En progreso
+
+Objetivo de este documento
+- Dejar claro que falta para llegar a una version final segura y lista para produccion.
+- Ordenar tareas por prioridad para que el equipo avance sin bloquearse.
+
+==================================================
+1) PENDIENTES CRITICOS (HACER PRIMERO)
+==================================================
+
+1.1 Seguridad de contrasenas (OBLIGATORIO)
+Estado actual:
+- En la tabla users, las contrasenas estan en texto plano (campo password).
+
+Riesgo:
+- Si se filtra la base, se exponen contrasenas reales.
+
+Que falta hacer:
+- Implementar hash de contrasena en backend (Argon2id recomendado, bcrypt como alternativa).
+- Guardar solo hash en password_hash.
+- Dejar de usar password para login.
+- Migrar cuentas de prueba a hash.
+- Luego eliminar o inutilizar columna password.
+
+Resultado esperado:
+- En la base no se ve ninguna contrasena legible.
+
+--------------------------------------------------
+1.2 Cerrar exposicion de phpMyAdmin por defecto
+Estado actual:
+- phpMyAdmin fue accesible desde internet y despues se deshabilito (404), lo cual es correcto para reposo.
+
+Que falta hacer:
+- Definir politica oficial:
+  - Por defecto: desactivado.
+  - Solo mantenimiento: activarlo temporalmente.
+- Cuando este activo: proteger con HTTPS + autenticacion extra (basic auth) y/o restriccion por IP.
+
+Resultado esperado:
+- Exposicion minima de superficie de ataque.
+
+--------------------------------------------------
+1.3 Login/registro no deben depender de conexion directa Qt -> MySQL
+Estado actual:
+- Qt consulta DB directa para login y registro.
+
+Riesgo:
+- Credenciales de DB en cliente.
+- Logica de seguridad distribuida y dificil de controlar.
+
+Que falta hacer:
+- Mover login y registro a FastAPI.
+- Qt debe llamar endpoints HTTP del backend.
+- Backend valida, hashea, audita y responde token/sesion.
+
+Resultado esperado:
+- Arquitectura cliente-servidor segura y mantenible.
+
+==================================================
+2) PENDIENTES ALTOS (SIGUIENTE BLOQUE)
+==================================================
+
+2.1 Configurar FastAPI base de autenticacion
+Que falta hacer:
+- Endpoints minimos:
+  - POST /auth/register-user
+  - POST /auth/register-company
+  - POST /auth/login
+- Validaciones:
+  - username y email unicos
+  - role permitido (Usuario, Empresa, Admin)
+  - reglas de datos requeridos por tipo
+- Integracion con tabla users + perfiles.
+
+2.2 Configurar Nginx delante de FastAPI
+Que falta hacer:
+- Reverse proxy a FastAPI.
+- TLS (Let's Encrypt) en dominio.
+- Redireccion HTTP -> HTTPS.
+- Reglas basicas de hardening.
+
+2.3 Verificar conexion real Qt con backend
+Que falta hacer:
+- Reemplazar consultas SQL en Qt por llamadas a API.
+- Manejo de errores de red, timeout y reintentos.
+- Mensajes de estado claros al usuario.
+
+==================================================
+3) PENDIENTES MEDIOS (FUNCIONALIDAD DE NEGOCIO)
+==================================================
+
+3.1 Completar flujos de empresa e ingeniero
+Que falta hacer:
+- Ingeniero:
+  - Subida de CV
+  - Historial de postulaciones
+  - Recomendaciones de capacitacion
+- Empresa:
+  - Crear/editar/cerrar vacantes
+  - Ver postulaciones por vacante
+  - Ver candidatos seleccionados y motivo IA
+
+3.2 Integracion IA de evaluacion de CV
+Que falta hacer:
+- Definir servicio IA en backend.
+- Guardar resultado en ai_evaluations.
+- Guardar brechas en training_recommendations.
+- Definir criterio de seleccion transparente.
+
+3.3 Panel Admin
+Que falta hacer:
+- Interfaz para Admin.
+- Ver actividad sensible.
+- Gestion basica de usuarios y estados.
+- Registrar acciones en admin_audit_logs.
+
+==================================================
+4) PENDIENTES DE INFRAESTRUCTURA Y DEVOPS
+==================================================
+
+4.1 Docker Compose estable para entorno backend
+Que falta hacer:
+- Definir compose para api + db (y opcional redis).
+- Variables de entorno fuera del codigo (.env).
+- Volumen persistente de MySQL.
+
+4.2 Backups y recuperacion
+Que falta hacer:
+- Backup automatico diario (mysqldump o fisico).
+- Politica de retencion.
+- Prueba de restore.
+
+4.3 Firewall y puertos
+Que falta hacer:
+- Mantener 3306 cerrado externamente salvo necesidad puntual.
+- Exponer solo 80/443 para web.
+- Revisar reglas en UFW y proveedor VPS.
+
+==================================================
+5) PENDIENTES DE CALIDAD Y PRUEBAS
+==================================================
+
+5.1 Pruebas backend
+Que falta hacer:
+- Unit tests de auth y validaciones.
+- Integration tests con DB real de prueba.
+
+5.2 Pruebas de seguridad
+Que falta hacer:
+- Intentos de login invalidos (rate limit futuro).
+- Verificar que no se devuelvan datos sensibles.
+- Revisar inyecciones y validacion de inputs.
+
+5.3 Pruebas end-to-end
+Que falta hacer:
+- Registro -> Login -> flujo segun rol.
+- Escenarios de error de red/backend.
+
+==================================================
+6) PENDIENTES DE DATOS Y PRIVACIDAD
+==================================================
+
+6.1 Datos sensibles y minimizacion
+Que falta hacer:
+- No mostrar password/password_hash en respuestas API.
+- Enmascarar datos en vistas administrativas cuando aplique.
+- Definir politica de retencion para CV y datos personales.
+
+6.2 Migracion de datos de prueba
+Que falta hacer:
+- Cambiar credenciales de prueba por seguras o eliminarlas.
+- Marcar entorno de desarrollo vs produccion.
+
+==================================================
+7) CHECKLIST RESUMIDO (PARA SEGUIR)
+==================================================
+
+[ ] Hash de contrasenas implementado y columna password deprecada
+[ ] FastAPI con endpoints de login/registro funcionando
+[ ] Qt usando API (sin SQL directo para auth)
+[ ] Nginx + HTTPS activos
+[ ] phpMyAdmin desactivado por defecto y protegido al activarlo
+[ ] Flujo Empresa/Ingeniero completo
+[ ] IA integrada con persistencia de resultados
+[ ] Panel Admin funcional con auditoria
+[ ] Backups automaticos + restore probado
+[ ] Pruebas unitarias, integracion y e2e minimas aprobadas
+
+==================================================
+8) RECOMENDACION DE ORDEN DE IMPLEMENTACION
+==================================================
+
+Fase 1 (seguridad y base):
+- Hash de contrasenas
+- FastAPI auth minima
+- Qt -> API para login/registro
+
+Fase 2 (infra):
+- Nginx + HTTPS
+- Politicas phpMyAdmin
+- Firewall final
+
+Fase 3 (negocio):
+- Vacantes, postulaciones, IA, capacitaciones
+- Panel Admin
+
+Fase 4 (calidad):
+- Testing completo
+- Backups/operacion
+
+FIN
