@@ -1,78 +1,165 @@
-Paso a paso para conectar el login Qt a una base de datos en tu VPS de Contabo:
+CONTEXTO TECNICO PARA OTRO COPILOT - CONEXION DB Y ESTADO REAL DEL PROYECTO
+Fecha: 2026-05-11
+Proyecto: 4eng-Login
 
-1. Configura MySQL/MariaDB en el VPS:
-   - Conéctate por SSH: ssh usuario@IP_DEL_VPS
-   - Instala MySQL/MariaDB si no está instalado: sudo apt update && sudo apt install mariadb-server
-   - Asegura el servidor: sudo mysql_secure_installation
+==================================================
+1) ESTADO REAL ACTUAL
+==================================================
+- App actual: Qt Widgets (desktop) con login y registro.
+- Conexion actual: Qt se conecta DIRECTO a MariaDB/MySQL.
+- Tabla usada por Qt: solo users.
+- Esquema real de BD: existe una base extendida con 9 tablas, pero Qt NO usa las otras 8 todavia.
+- Seguridad actual: las contrasenas en la app Qt se validan y se guardan en texto plano dentro de users.password.
+- password_hash existe como preparacion para Fase 2, pero Qt actual NO lo usa.
+- Fase 2 prevista: mover autenticacion y registro a FastAPI, guardar hash fuerte en password_hash, y dejar de exponer DB al cliente.
 
-2. Crea la base de datos y la tabla de usuarios:
-   - Abre el cliente MySQL: sudo mysql -u root -p
-   - Crea la base de datos: CREATE DATABASE login_db;
-   - Usa la base: USE login_db;
-   - Crea la tabla con los campos necesarios para login y registro:
-     CREATE TABLE users (
-       id INT AUTO_INCREMENT PRIMARY KEY,
-       role VARCHAR(20) NOT NULL,
-       username VARCHAR(50) NOT NULL UNIQUE,
-       password VARCHAR(255) NOT NULL,
-       email VARCHAR(120),
-       display_name VARCHAR(120),
-       programming_language VARCHAR(50),
-       age INT
-     );
+==================================================
+2) QUE HACE EL CODIGO QT HOY
+==================================================
+Login:
+- Consulta users por username + password.
+- Usa users.password en texto plano.
 
-3. Inserta registros de prueba:
-   - Empresa de prueba:
-     INSERT INTO users(role, username, password, email, display_name) VALUES('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba');
-   - Usuario de prueba:
-     INSERT INTO users(role, username, password, email, display_name, programming_language, age) VALUES('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25);
+Registro Empresa:
+- Inserta en users:
+  - role='Empresa'
+  - username
+  - password
+  - email
+  - display_name
 
-4. Permite conexiones remotas de tu aplicación Qt:
-   - Edita /etc/mysql/mariadb.conf.d/50-server.cnf
-   - Cambia bind-address = 127.0.0.1 por bind-address = 0.0.0.0
-   - Reinicia MySQL: sudo systemctl restart mariadb
-   - Abre el puerto 3306 en el firewall de la VPS o usa un túnel SSH si no quieres exponer el puerto públicamente.
+Registro Usuario:
+- Inserta en users:
+  - role='Usuario'
+  - username
+  - password
+  - email
+  - display_name
+  - programming_language
+  - age
 
-5. Crea un usuario MySQL seguro para la app Qt:
-   - En MySQL:
-     CREATE USER 'qtuser'@'%' IDENTIFIED BY 'qtpass';
-     GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
-     FLUSH PRIVILEGES;
+Importante:
+- Qt NO crea engineer_profiles.
+- Qt NO crea company_profiles.
+- Qt NO gestiona cv_documents, job_posts, applications, ai_evaluations, training_recommendations ni admin_audit_logs.
+- Eso queda reservado para FastAPI (Fase 2).
 
-6. Configura las credenciales en variables de entorno (recomendado):
-   - El proyecto ahora lee estos valores al iniciar:
-      LOGIN_DB_HOST
-      LOGIN_DB_PORT
-      LOGIN_DB_NAME
-      LOGIN_DB_USER
-      LOGIN_DB_PASSWORD
-   - Valores por defecto si no defines variables:
-      host=127.0.0.1, port=3306, db=login_db, user=qtuser, pass=qtpass
-   - Ejemplo en PowerShell (solo sesión actual):
-      $env:LOGIN_DB_HOST = "IP_DEL_VPS"
-      $env:LOGIN_DB_PORT = "3306"
-      $env:LOGIN_DB_NAME = "login_db"
-      $env:LOGIN_DB_USER = "qtuser"
-      $env:LOGIN_DB_PASSWORD = "qtpass"
-   - Si quieres hacerlo permanente en Windows, usa setx para cada variable.
+==================================================
+3) ESTRUCTURA MINIMA DE users QUE QT NECESITA
+==================================================
+Campos minimos que el Qt actual espera encontrar o usar:
+- id
+- role
+- username
+- password
+- email
+- display_name
+- programming_language
+- age
 
-7. Instala el plugin Qt MySQL en tu máquina de desarrollo:
-   - En Linux con Qt: sudo apt install libqt5sql5-mysql
-   - En Windows, instala el plugin QMYSQL correspondiente a tu versión de Qt.
+Campos adicionales presentes en la BD real:
+- password_hash
+- is_active
+- created_at
+- updated_at
 
-8. Prueba la conexión desde Qt:
-   - Abre el proyecto en Qt Creator o usa qmake y make.
-   - Ejecuta la app e intenta iniciar sesión o registrar un usuario.
-   - Si hay error, el mensaje aparecerá en la etiqueta de estado de la app.
+Esos campos extra no rompen Qt; simplemente hoy no se usan.
 
-9. Recomendaciones de seguridad:
-   - No uses contraseñas en texto plano en producción.
-   - En producción debes almacenar contraseñas con hash y sal.
-   - Para mayor seguridad, considera usar un API intermedio en el VPS en lugar de conectar directamente con MySQL desde la app.
+==================================================
+4) DATOS DE PRUEBA ESPERADOS
+==================================================
+Ejemplos compatibles con el Qt actual:
 
-Resumen:
-- Crea la base de datos y tabla `users` con campos de registro.
-- Permite conexión remota o usa un túnel SSH.
-- Crea un usuario MySQL seguro para la app.
-- Configura variables de entorno con los datos reales del VPS.
-- Compila y prueba login y registro.
+INSERT INTO users(role, username, password, email, display_name)
+VALUES('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba');
+
+INSERT INTO users(role, username, password, email, display_name, programming_language, age)
+VALUES('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25);
+
+INSERT INTO users(role, username, password, email, display_name)
+VALUES('Admin', 'admin', 'admin123', 'admin@plataforma.com', 'Administrador');
+
+==================================================
+5) CONEXION DESDE QT
+==================================================
+El proyecto lee estas variables de entorno:
+- LOGIN_DB_HOST
+- LOGIN_DB_PORT
+- LOGIN_DB_NAME
+- LOGIN_DB_USER
+- LOGIN_DB_PASSWORD
+
+Valores por defecto actuales si no se configuran:
+- host=127.0.0.1
+- port=3306
+- db=login_db
+- user=qtuser
+- pass=qtpass
+
+Ejemplo en PowerShell:
+$env:LOGIN_DB_HOST = "IP_DEL_VPS"
+$env:LOGIN_DB_PORT = "3306"
+$env:LOGIN_DB_NAME = "login_db"
+$env:LOGIN_DB_USER = "qtuser"
+$env:LOGIN_DB_PASSWORD = "qtpass"
+
+Si se quiere persistencia en Windows, usar setx.
+
+==================================================
+6) CONFIGURACION DEL VPS PARA PRUEBA REMOTA
+==================================================
+Si se prueba Qt contra la BD remota:
+1. Verificar MariaDB instalado y funcionando.
+2. Verificar que exista la base login_db.
+3. Verificar que exista el usuario qtuser con permisos sobre login_db.users.
+4. Abrir 3306 SOLO si se acepta el riesgo temporal.
+5. Alternativa preferida: tunel SSH en vez de exponer 3306.
+
+Ejemplo de grants minimos para el Qt actual:
+CREATE USER 'qtuser'@'%' IDENTIFIED BY 'qtpass';
+GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
+FLUSH PRIVILEGES;
+
+Si se usa MariaDB en el mismo VPS para FastAPI mas adelante, lo recomendable es cerrar 3306 al exterior y usar acceso local solamente.
+
+==================================================
+7) SEGURIDAD Y LIMITACIONES ACTUALES
+==================================================
+Riesgos actuales:
+- La app Qt conoce credenciales de BD.
+- La autenticacion ocurre desde el cliente.
+- users.password guarda texto plano.
+
+Esto es aceptable solo como etapa temporal/prototipo.
+
+No asumir:
+- Que Qt actual ya usa bcrypt, Argon2 o password_hash.
+- Que Qt actual ya trabaja con perfiles extendidos.
+- Que el backend FastAPI ya existe.
+
+==================================================
+8) DIRECCION CORRECTA PARA FASE 2
+==================================================
+FastAPI debe hacerse cargo de:
+- login
+- registro
+- hash de contrasena con Argon2id o bcrypt
+- escritura en users.password_hash
+- validaciones de negocio
+- creacion de engineer_profiles o company_profiles
+- auditoria y reglas por rol
+
+Objetivo final:
+- Qt deja de hablar directo con MySQL para auth.
+- Qt o frontend web llaman a endpoints HTTP.
+- password queda deprecado y password_hash pasa a ser la fuente real.
+
+==================================================
+9) RESUMEN RAPIDO
+==================================================
+- Si el otro Copilot analiza el proyecto, debe asumir que HOY Qt solo depende de users.
+- La BD completa ya existe, pero Qt todavia no la consume.
+- La autenticacion actual es texto plano y temporal.
+- La solucion correcta y definitiva de seguridad vive en FastAPI Fase 2.
+
+FIN

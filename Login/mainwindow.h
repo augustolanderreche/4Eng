@@ -28,13 +28,6 @@ private:
     QString getDisplayName(const QString &username);
     QString getRole(const QString &username);
     bool userExists(const QString &username);
-    bool createUserRecord(const QString &role,
-                          const QString &username,
-                          const QString &password,
-                          const QString &email,
-                          const QString &displayName,
-                          const QString &programmingLanguage = QString(),
-                          int age = 0);
     void openEmpresaWindow(const QString &displayName);
     void openUserWindow(const QString &displayName);
 

@@ -7,7 +7,7 @@ Objetivo de este documento
 - Ordenar tareas por prioridad para que el equipo avance sin bloquearse.
 
 ==================================================
-1) PENDIENTES CRITICOS (HACER PRIMERO)
+1) PENDIENTES CRITICOS (HACER PRIMERO) COMPLETADO
 ==================================================
 
 1.1 Seguridad de contrasenas (OBLIGATORIO)
@@ -23,6 +23,8 @@ Que falta hacer:
 - Dejar de usar password para login.
 - Migrar cuentas de prueba a hash.
 - Luego eliminar o inutilizar columna password.
+- [FASTAPI] Configurar passlib con bcrypt o Argon2 en FastAPI (ver fase_2_fastapi_explicacion.txt sección "Solución PRACTICA: Hibrida")
+- [FASTAPI] Implementar dual-check para migración gradual: SHA2 (Qt) -> bcrypt/Argon2 (FastAPI)
 
 Resultado esperado:
 - En la base no se ve ninguna contrasena legible.
@@ -177,7 +179,7 @@ Que falta hacer:
 7) CHECKLIST RESUMIDO (PARA SEGUIR)
 ==================================================
 
-[ ] Hash de contrasenas implementado y columna password deprecada
+[ completado ] Hash de contrasenas implementado y columna password deprecada
 [ ] FastAPI con endpoints de login/registro funcionando
 [ ] Qt usando API (sin SQL directo para auth)
 [ ] Nginx + HTTPS activos

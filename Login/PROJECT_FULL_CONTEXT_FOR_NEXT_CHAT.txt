@@ -4,6 +4,10 @@ STACK: Qt Widgets + Qt SQL (QMYSQL) + C++17 + qmake
 WORKSPACE ROOT: c:\Users\aland\4Eng\Login
 OS (CURRENT DEV MACHINE): Windows
 
+PRIMARY CONTEXT FILE:
+- This is the main handoff/context file to read first in the next chat.
+- Secondary docs add detail, but this file should be treated as the source of truth for current project state.
+
 ==================================================
 1) QUICK SUMMARY
 ==================================================
@@ -226,6 +230,7 @@ RegisterWindow:
 Current state:
 - Passwords are stored and checked as plain text.
 - Direct DB connection from client app to VPS DB (current Qt phase).
+- Qt currently does NOT use SHA2, bcrypt, Argon2, or password_hash for auth.
 - phpMyAdmin endpoint currently disabled (404) to prevent public access.
 
 Security implications:
@@ -284,8 +289,8 @@ Any other role routes to UserWindow.
 - Registration clears fields on success.
 - Register window opens without closing login window.
 - Empresa/User windows close login window when opened from successful login.
-- There are helper methods in MainWindow (userExists/createUserRecord) not used
-  by current MainWindow flow; similar methods are actively used in RegisterWindow.
+- MainWindow still contains an unused helper method userExists().
+- Registration helpers actively used by the app live in RegisterWindow.
 
 Infra behavior notes:
 - If phpMyAdmin is re-enabled in Apache, route is typically /phpmyadmin/ (with trailing slash due to redirect).
@@ -305,6 +310,7 @@ Infra behavior notes:
 
 3. Instructions update:
 - db_connection_instructions.txt now documents env-var approach.
+- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt should be preferred as the first file to read in future chats.
 
 4. New infra + DB docs added:
 - tutorial_contabo_phpmyadmin_paso_a_paso.txt
@@ -321,6 +327,11 @@ Infra behavior notes:
   - ServerSignature Off
   - TraceEnable Off
 
+7. Password handling decision:
+- A temporary SHA2-based approach was discarded.
+- Current Qt code uses plain text in users.password only as a temporary prototype stage.
+- Planned secure implementation is deferred to FastAPI using password_hash with Argon2id or bcrypt.
+
 ==================================================
 14) CLEAN REBUILD NOTE
 ==================================================
@@ -332,8 +343,8 @@ This is expected after file/class rename in Qt projects.
 15) NEXT CHAT HANDOFF PROMPT (OPTIONAL)
 ==================================================
 Suggested message to next chat:
-"Lee PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt y documentacion_base_datos_login_db.txt.
-Necesito implementar migracion a password hash, separar login hacia backend FastAPI,
-y definir endpoints para users/job_posts/applications/ai_evaluations." 
+"Lee primero PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt. Despues usa documentacion_base_datos_login_db.txt y pendientes_proyecto_final.txt como soporte.
+El estado actual es: Qt desktop con login/registro directo sobre users, password en texto plano temporal, y FastAPI pendiente para mover auth a password_hash con Argon2id o bcrypt.
+Necesito seguir con la separacion de auth hacia backend y definir endpoints y migracion segura." 
 
 END OF CONTEXT FILE

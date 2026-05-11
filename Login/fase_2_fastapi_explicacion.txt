@@ -1,0 +1,265 @@
+DOCUMENTACION - FASE 2: FastAPI + Nginx
+Fecha: 2026-05-11
+Proyecto: 4eng-Login (continuacion despues de Qt)
+
+==================================================
+1) ¿QUE ES FASE 2?
+==================================================
+Tu proyecto tiene 2 fases claramente separadas:
+
+FASE 1 (COMPLETADA): Qt Desktop + MySQL
+- Objetivo: Autenticacion basica (login/registro)
+- Responsables: Usuario con Qt en su PC
+- Usuarios creados: Solo en tabla "users"
+- Perfiles extendidos: VACIOS (no se tocan)
+- Tablas activas: SOLO "users"
+- Fin de fase: Usuario puede loguearse
+
+FASE 2 (PROXIMA): FastAPI + Nginx
+- Objetivo: Backend web + interfaz web + logica de negocio
+- Responsables: Servidor en VPS
+- Usuarios existentes: Los de tabla "users" (heredados de Qt)
+- Perfiles extendidos: Se LLENAN aqui (engineer_profiles, company_profiles)
+- Tablas activas: TODAS las 9 tablas
+- Fin de fase: Sistema completo funcionando
+
+==================================================
+2) ¿POR QUE ESTAN SEPARADAS?
+==================================================
+Razon tecnica:
+- Qt es DESKTOP (corre en tu PC Windows)
+- FastAPI es SERVIDOR WEB (corre en VPS Linux)
+- No pueden ejecutarse simultaneamente en el mismo contexto
+- FastAPI es para WEB; Qt es para DESKTOP
+
+Razon de negocio:
+- Usuario final usa Qt (instalado en su PC) para login inicial
+- Despues usa navegador (WEB) para ver CVs, postular, etc.
+- Admin usa WEB para auditar y configurar
+
+Razon de base de datos:
+- La tabla "users" es COMPARTIDA entre ambas fases
+- Las otras 8 tablas son SOLO para FastAPI
+- Si Qt intentara llenarlas, habria conflicto de logica
+
+==================================================
+3) QUE HACE FASTAPI EN FASE 2
+==================================================
+FastAPI es un FRAMEWORK WEB en Python que:
+
+A) Recibe usuarios existentes de Qt (tabla users)
+   - NO crea nuevos usuarios (eso lo hace Qt)
+   - AUTENTICA con username/password (igual que Qt)
+   - Hereda el hash SHA2 de Qt (o migra a Argon2)
+
+B) Completa perfiles de Usuario (engineer_profiles)
+   Cuando el usuario se loguea por primera vez en web, FastAPI le pide:
+   - Años de experiencia
+   - Skills especificos (JSON)
+   - Portfolio URL
+   - Disponibilidad
+   - Pretension salarial
+   - Y guarda TODO en engineer_profiles
+
+C) Completa perfiles de Empresa (company_profiles)
+   Cuando la empresa se loguea por primera vez en web, FastAPI le pide:
+   - Rubro/industria
+   - Numero de empleados
+   - Ubicacion sede
+   - Sitio web
+   - Y guarda TODO en company_profiles
+
+D) Gestiona CVs (cv_documents)
+   - Usuario sube PDF
+   - FastAPI lo parsea (extrae texto, skills)
+   - Lo guarda en BD con ruta del archivo
+   - Lo indexa para busqueda
+
+E) Gestiona vacantes (job_posts)
+   - Empresa crea vacante con titulo, descripcion, skills requeridas
+   - Se guarda con status='abierta'
+   - Ingenieros pueden verla y postular
+
+F) Procesa postulaciones (applications)
+   - Usuario postula a vacante (CV + mensaje opcional)
+   - Se guarda en applications con status='postulado'
+   - Empresa ve que alguien postulo
+
+G) Evalua con IA (ai_evaluations)
+   - FastAPI llama API de OpenAI (o similar)
+   - Manda: CV del ingeniero + job_post requerimientos
+   - IA dice: "match 85%", "skills faltantes: Docker, Kubernetes"
+   - Se guarda evaluacion con score y recomendacion
+
+H) Sugiere capacitacion (training_recommendations)
+   - Basado en brecha IA, FastAPI sugiere cursos
+   - Usuario ve: "Completa este curso para mejorar"
+   - Guarda en training_recommendations
+
+I) Audita acciones (admin_audit_logs)
+   - Admin modifica usuario, vacante, etc.
+   - FastAPI registra QUIEN, QUE, CUANDO, DONDE
+   - Tabla admin_audit_logs tiene historial completo
+
+==================================================
+4) CUAL ES EL FLUJO USUARIO A USUARIO
+==================================================
+Escenario: Juan (ingeniero) postula a vacante de Empresa XYZ
+
+PASO 1: Juan se registra en Qt (FASE 1)
+- Abre app Qt en su PC
+- Rellena: usuario=juan, pass=mipass, edad=28, lenguaje=Python
+- Qt inserta en BD tabla "users" (role='Usuario', password hasheada SHA2)
+- Qt cierra, Juan tiene cuenta
+
+PASO 2: Juan entra a FastAPI por web (FASE 2)
+- Abre navegador
+- Va a http://IP_VPS/login
+- Ingresa: usuario=juan, pass=mipass
+- FastAPI autentica contra SHA2 en BD
+- FastAPI lo deja entrar
+
+PASO 3: Juan completa perfil (FASE 2)
+- FastAPI le dice: "Completa tu perfil de ingeniero"
+- Juan llena: 5 años experiencia, skills={Python, SQL, Docker}, ...
+- FastAPI guarda en engineer_profiles (user_id=juan_id)
+
+PASO 4: Juan sube CV (FASE 2)
+- Juan sube archivo PDF
+- FastAPI lo guarda en /uploads/juan_cv.pdf
+- FastAPI extrae texto del PDF
+- FastAPI lo indexa (skills detectadas, experiencia, etc.)
+- Guarda en cv_documents
+
+PASO 5: Juan ve vacante y postula (FASE 2)
+- Juan busca vacantes
+- Ve "Empresa XYZ busca Senior Python Developer"
+- Click en "Postular"
+- FastAPI crea fila en applications (job_post_id, engineer_user_id, cv_document_id)
+
+PASO 6: IA evalua candidato (FASE 2, automatico)
+- Trigger de BD o tarea programada
+- FastAPI lee: CV de Juan + requerimientos de vacante
+- Llama OpenAI: "¿que tanto match tiene este CV?"
+- OpenAI responde: "85% match, falta Kubernetes"
+- FastAPI guarda en ai_evaluations (score=85, missing_skills=['Kubernetes'])
+
+PASO 7: Juan ve recomendacion (FASE 2)
+- Juan en web ve: "Para este puesto necesitas Kubernetes"
+- Ve sugerencia: "Completa curso Kubernetes en Udemy"
+- Eso esta en training_recommendations
+
+PASO 8: Admin audita (FASE 2, solo admin)
+- Admin en dashboard ve:
+  - "2026-05-11 14:30 - Usuario juan postulo a vacante XYZ"
+  - "2026-05-11 14:35 - IA evaluo aplicacion: 85% match"
+- Todo registrado en admin_audit_logs
+
+==================================================
+5) POR QUE Qt NO TOCA LAS OTRAS TABLAS
+==================================================
+Tecnico:
+- Qt es SINCRONICO (pide entrada del usuario, espera respuesta)
+- FastAPI es ASINCRONICO (maneja multiples usuarios a la vez)
+- No es seguro que Qt toque cv_documents, job_posts, etc.
+
+Logico:
+- CVs y vacantes son operaciones COMPLEJAS (suben archivos, parsean, evaluan IA)
+- Qt es SIMPLE (solo login/registro)
+- Separar responsabilidades = codigo mas limpio
+
+Practico:
+- Si la empresa XYZ quiere cambiar rapidamente una vacante, no puede hacerlo desde Qt (solo desde web)
+- Si FastAPI procesa IA, Qt no puede interferir
+
+==================================================
+6) ¿CUANDO MIGRAS DE FASE 1 A FASE 2?
+==================================================
+Checklist:
+
+ANTES de arrancar FastAPI:
+1. Verificar que Qt login/registro funciona con BD remota ✓ (vos debes hacer esto)
+2. Crear datos de prueba (3 usuarios, 2 empresas) ✓ (ya hecho)
+3. Documentar credenciales DB ✓ (ya hecho)
+
+AL arrancar FastAPI:
+1. Clonar BD existente (backup)
+2. Instalar FastAPI + dependencias en VPS
+3. Configurar FastAPI con credenciales DB
+4. Crear endpoints /login, /register (reutiliza hash de Qt)
+5. Crear endpoints /profile (engineer_profiles, company_profiles)
+6. Crear endpoints /cv, /jobs, /applications, etc.
+7. Hacer migracion gradual (Qt y FastAPI conviven 1-2 semanas)
+
+DESPUES:
+- Usuarios nuevos entran directo a web (FastAPI), Qt es legacy
+- O mantener ambos (web para nuevos, Qt para compatibilidad antigua)
+
+==================================================
+7) TECNOLOGIAS FASE 2
+==================================================
+Backend (VPS):
+- FastAPI (Python, framework web moderno)
+- Uvicorn (servidor ASGI para FastAPI)
+- SQLAlchemy (ORM para acceder BD)
+- Pydantic (validacion de datos)
+- OpenAI API (para IA de matching)
+
+Servidor:
+- Nginx (reverse proxy, mas ligero que Apache)
+- Certificado SSL (HTTPS)
+- Gunicorn o Uvicorn (app server)
+
+BD:
+- Misma MariaDB en VPS
+- Misma tabla "users"
+- Nuevas filas en engineer_profiles, company_profiles, etc.
+
+Frontend (cliente):
+- React o Vue.js (web, alternativa a Qt)
+- O seguir usando Qt para login, derivar a web despues
+
+==================================================
+8) COMO HEREDA FASTAPI EL HASH DE QT
+==================================================
+Situacion: Tu tabla "users" tiene passwords hasheadas con SHA2 (desde Qt).
+
+FastAPI hereda asi:
+1. Lee campo "password" (SHA2, 256 bits)
+2. Cuando usuario se loguea: ingresa password plano
+3. FastAPI hace: SHA2(password_ingresada, 256)
+4. Compara con lo guardado
+5. Si coincide, lo deja entrar
+
+PERO FastAPI despues quiere migrar a Argon2 (mas seguro).
+Migracion gradual:
+- Mantienes SHA2 mientras exista
+- Nuevos usuarios registrados por FastAPI usan Argon2
+- Proxima vez que usuario SHA2 se loguea, fastAPI hashea con Argon2 y actualiza BD
+- En 6 meses todos tienen Argon2
+
+==================================================
+9) FASE 2 NO COMIENZA HASTA QUE:
+==================================================
+1. Qt este estable y probado en remoto ✓ (proxima accion)
+2. Equipo FastAPI este listo (tu o alguien más)
+3. Servidor Nginx este configurado en VPS
+4. Certificado SSL activo (Let's Encrypt gratis)
+5. Base de datos backup hecho
+
+Por eso ahora SOLO debes testear Qt. FastAPI es proxima fase.
+
+==================================================
+10) RESUMEN: DOS MUNDOS
+==================================================
+FASE 1 (Qt):                      FASE 2 (FastAPI):
+- Escritorio (Windows, Linux)    - Web (navegador)
+- Registra usuario simple        - Completa perfiles
+- Lee tabla "users" solamente    - Toca todas 9 tablas
+- Actores: desarrollador local   - Actores: usuarios en internet
+- Seguridad: local               - Seguridad: HTTPS, tokens JWT
+- Hash: SHA2 (planificado)       - Hash: Argon2 (futuro)
+
+Punto de encuentro: tabla "users"
+
+FIN

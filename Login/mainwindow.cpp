@@ -97,7 +97,7 @@ bool MainWindow::validateCredentials(const QString &username, const QString &pas
     }
 
     QSqlQuery query(m_db);
-    query.prepare("SELECT COUNT(*) FROM users WHERE username = :user AND (password = SHA2(:pass, 256) OR password = :pass)");
+    query.prepare("SELECT COUNT(*) FROM users WHERE username = :user AND password = :pass");
     query.bindValue(":user", username);
     query.bindValue(":pass", password);
 
@@ -169,46 +169,6 @@ bool MainWindow::userExists(const QString &username)
     }
 
     return query.value(0).toInt() > 0;
-}
-
-bool MainWindow::createUserRecord(const QString &role,
-                                  const QString &username,
-                                  const QString &password,
-                                  const QString &email,
-                                  const QString &displayName,
-                                  const QString &programmingLanguage,
-                                  int age)
-{
-    if (!m_db.isOpen() && !m_db.open()) {
-        m_statusLabel->setText(tr("No se pudo conectar a la base de datos: %1").arg(m_db.lastError().text()));
-        return false;
-    }
-
-    QSqlQuery query(m_db);
-    if (programmingLanguage.isEmpty()) {
-        query.prepare("INSERT INTO users (role, username, password, email, display_name) VALUES (:role, :username, SHA2(:password, 256), :email, :display_name)");
-        query.bindValue(":role", role);
-        query.bindValue(":username", username);
-        query.bindValue(":password", password);
-        query.bindValue(":email", email);
-        query.bindValue(":display_name", displayName);
-    } else {
-        query.prepare("INSERT INTO users (role, username, password, email, display_name, programming_language, age) VALUES (:role, :username, SHA2(:password, 256), :email, :display_name, :programming_language, :age)");
-        query.bindValue(":role", role);
-        query.bindValue(":username", username);
-        query.bindValue(":password", password);
-        query.bindValue(":email", email);
-        query.bindValue(":display_name", displayName);
-        query.bindValue(":programming_language", programmingLanguage);
-        query.bindValue(":age", age);
-    }
-
-    if (!query.exec()) {
-        m_statusLabel->setText(tr("Error al crear usuario: %1").arg(query.lastError().text()));
-        return false;
-    }
-
-    return true;
 }
 
 void MainWindow::attemptLogin()
