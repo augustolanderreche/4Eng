@@ -1,0 +1,69 @@
+Paso a paso para conectar el login Qt a una base de datos en tu VPS de Contabo:
+
+1. Configura MySQL/MariaDB en el VPS:
+   - Conéctate por SSH: ssh usuario@IP_DEL_VPS
+   - Instala MySQL/MariaDB si no está instalado: sudo apt update && sudo apt install mariadb-server
+   - Asegura el servidor: sudo mysql_secure_installation
+
+2. Crea la base de datos y la tabla de usuarios:
+   - Abre el cliente MySQL: sudo mysql -u root -p
+   - Crea la base de datos: CREATE DATABASE login_db;
+   - Usa la base: USE login_db;
+   - Crea la tabla con los campos necesarios para login y registro:
+     CREATE TABLE users (
+       id INT AUTO_INCREMENT PRIMARY KEY,
+       role VARCHAR(20) NOT NULL,
+       username VARCHAR(50) NOT NULL UNIQUE,
+       password VARCHAR(255) NOT NULL,
+       email VARCHAR(120),
+       display_name VARCHAR(120),
+       programming_language VARCHAR(50),
+       age INT
+     );
+
+3. Inserta registros de prueba:
+   - Empresa de prueba:
+     INSERT INTO users(role, username, password, email, display_name) VALUES('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba');
+   - Usuario de prueba:
+     INSERT INTO users(role, username, password, email, display_name, programming_language, age) VALUES('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25);
+
+4. Permite conexiones remotas de tu aplicación Qt:
+   - Edita /etc/mysql/mariadb.conf.d/50-server.cnf
+   - Cambia bind-address = 127.0.0.1 por bind-address = 0.0.0.0
+   - Reinicia MySQL: sudo systemctl restart mariadb
+   - Abre el puerto 3306 en el firewall de la VPS o usa un túnel SSH si no quieres exponer el puerto públicamente.
+
+5. Crea un usuario MySQL seguro para la app Qt:
+   - En MySQL:
+     CREATE USER 'qtuser'@'%' IDENTIFIED BY 'qtpass';
+     GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
+     FLUSH PRIVILEGES;
+
+6. Modifica el código Qt con tus credenciales reales:
+   - En mainwindow.cpp cambia:
+       m_db.setHostName("TU_IP_VPS");
+       m_db.setDatabaseName("nombre_base");
+       m_db.setUserName("usuario_db");
+       m_db.setPassword("clave_db");
+   - Usa los valores reales de tu VPS: IP, nombre de base de datos, usuario y contraseña.
+
+7. Instala el plugin Qt MySQL en tu máquina de desarrollo:
+   - En Linux con Qt: sudo apt install libqt5sql5-mysql
+   - En Windows, instala el plugin QMYSQL correspondiente a tu versión de Qt.
+
+8. Prueba la conexión desde Qt:
+   - Abre el proyecto en Qt Creator o usa qmake y make.
+   - Ejecuta la app e intenta iniciar sesión o registrar un usuario.
+   - Si hay error, el mensaje aparecerá en la etiqueta de estado de la app.
+
+9. Recomendaciones de seguridad:
+   - No uses contraseñas en texto plano en producción.
+   - En producción debes almacenar contraseñas con hash y sal.
+   - Para mayor seguridad, considera usar un API intermedio en el VPS en lugar de conectar directamente con MySQL desde la app.
+
+Resumen:
+- Crea la base de datos y tabla `users` con campos de registro.
+- Permite conexión remota o usa un túnel SSH.
+- Crea un usuario MySQL seguro para la app.
+- Configura `mainwindow.cpp` con los datos reales.
+- Compila y prueba login y registro.
