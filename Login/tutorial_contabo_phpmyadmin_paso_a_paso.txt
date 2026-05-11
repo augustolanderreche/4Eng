@@ -1,11 +1,12 @@
-TUTORIAL COMPLETO: BASE DE DATOS EN VPS CONTABO CON PHPMYADMIN Y CONEXION A TU PROYECTO QT
+TUTORIAL COMPLETO: BASE DE DATOS EN VPS CONTABO CON PHPMYADMIN (LISTA PARA FASTAPI/NGINX)
 Fecha: 2026-05-11
 
 Objetivo
 - Instalar y asegurar MariaDB/MySQL en tu VPS Contabo.
 - Instalar phpMyAdmin para gestionar la base por web.
-- Crear base de datos, tabla users y usuario de aplicacion.
-- Conectar esa base con tu proyecto Qt 4eng-Login.
+- Crear base de datos y tablas del proyecto (listas para backend FastAPI).
+- Dejar phpMyAdmin disponible para que puedas administrar la DB cuando quieras.
+- Entregar a tu equipo un SQL listo para importar.
 
 Supuestos
 - VPS con Ubuntu 22.04 o 24.04 (si usas Debian es casi igual).
@@ -60,42 +61,234 @@ PASO 4) CREAR BASE Y TABLA QUE USA TU APP
 Entra a MariaDB:
 sudo mysql -u root -p
 
-Ejecuta SQL:
-CREATE DATABASE login_db CHARACTER SET utf8mb4 COLLATE utf8mb4_unicode_ci;
+Ejecuta este SQL (base lista para lo actual + crecimiento futuro):
+CREATE DATABASE IF NOT EXISTS login_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
 USE login_db;
 
-CREATE TABLE users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  role VARCHAR(20) NOT NULL,
-  username VARCHAR(50) NOT NULL UNIQUE,
+-- Tabla principal de autenticacion (compatible con tu app actual).
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  role ENUM('Usuario','Empresa','Admin') NOT NULL,
+  username VARCHAR(50) NOT NULL,
   password VARCHAR(255) NOT NULL,
-  email VARCHAR(120),
-  display_name VARCHAR(120),
-  programming_language VARCHAR(50),
-  age INT
+  email VARCHAR(120) NOT NULL,
+  display_name VARCHAR(120) NOT NULL,
+  programming_language VARCHAR(50) NULL,
+  age INT NULL,
+  password_hash VARCHAR(255) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_users_username UNIQUE (username),
+  CONSTRAINT uq_users_email UNIQUE (email)
 );
 
-Datos de prueba:
-INSERT INTO users(role, username, password, email, display_name)
-VALUES('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba');
+-- Perfil extendido para ingenieros (usuario rol Usuario).
+CREATE TABLE IF NOT EXISTS engineer_profiles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  first_name VARCHAR(80) NOT NULL,
+  last_name VARCHAR(80) NOT NULL,
+  phone VARCHAR(30) NULL,
+  city VARCHAR(80) NULL,
+  country VARCHAR(80) NULL,
+  years_experience DECIMAL(4,1) NULL,
+  seniority ENUM('Trainee','Junior','SemiSenior','Senior','Lead') NULL,
+  linkedin_url VARCHAR(255) NULL,
+  github_url VARCHAR(255) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_engineer_profiles_user UNIQUE (user_id),
+  CONSTRAINT fk_engineer_profiles_user FOREIGN KEY (user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
 
-INSERT INTO users(role, username, password, email, display_name, programming_language, age)
-VALUES('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25);
+-- Perfil extendido para empresas (usuario rol Empresa).
+CREATE TABLE IF NOT EXISTS company_profiles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  company_name VARCHAR(140) NOT NULL,
+  tax_id VARCHAR(40) NULL,
+  website VARCHAR(255) NULL,
+  industry VARCHAR(100) NULL,
+  company_size ENUM('1-10','11-50','51-200','201-500','500+') NULL,
+  contact_name VARCHAR(120) NULL,
+  contact_phone VARCHAR(30) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_company_profiles_user UNIQUE (user_id),
+  CONSTRAINT fk_company_profiles_user FOREIGN KEY (user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- CVs cargados por ingenieros.
+CREATE TABLE IF NOT EXISTS cv_documents (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  engineer_user_id BIGINT UNSIGNED NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_url VARCHAR(500) NOT NULL,
+  file_sha256 CHAR(64) NULL,
+  extracted_text MEDIUMTEXT NULL,
+  parsed_skills JSON NULL,
+  uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cv_documents_engineer FOREIGN KEY (engineer_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX idx_cv_documents_engineer_user_id (engineer_user_id)
+);
+
+-- Solicitudes de trabajo creadas por empresas.
+CREATE TABLE IF NOT EXISTS job_posts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_user_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  description MEDIUMTEXT NOT NULL,
+  required_skills JSON NULL,
+  min_years_experience DECIMAL(4,1) NULL,
+  location_mode ENUM('Remoto','Hibrido','Presencial') NOT NULL DEFAULT 'Remoto',
+  city VARCHAR(80) NULL,
+  country VARCHAR(80) NULL,
+  status ENUM('Abierta','Pausada','Cerrada') NOT NULL DEFAULT 'Abierta',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_job_posts_company FOREIGN KEY (company_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX idx_job_posts_company_user_id (company_user_id),
+  INDEX idx_job_posts_status (status)
+);
+
+-- Postulaciones de ingenieros a ofertas.
+CREATE TABLE IF NOT EXISTS applications (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job_post_id BIGINT UNSIGNED NOT NULL,
+  engineer_user_id BIGINT UNSIGNED NOT NULL,
+  cv_document_id BIGINT UNSIGNED NULL,
+  status ENUM('Postulada','EnRevision','Seleccionada','Rechazada') NOT NULL DEFAULT 'Postulada',
+  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_applications_job_post FOREIGN KEY (job_post_id)
+    REFERENCES job_posts(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_applications_engineer FOREIGN KEY (engineer_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_applications_cv FOREIGN KEY (cv_document_id)
+    REFERENCES cv_documents(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT uq_applications_job_engineer UNIQUE (job_post_id, engineer_user_id),
+  INDEX idx_applications_engineer_user_id (engineer_user_id),
+  INDEX idx_applications_status (status)
+);
+
+-- Resultado de analisis IA sobre cada postulacion.
+CREATE TABLE IF NOT EXISTS ai_evaluations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  application_id BIGINT UNSIGNED NOT NULL,
+  model_name VARCHAR(80) NOT NULL,
+  score DECIMAL(5,2) NULL,
+  recommendation ENUM('NoRecomendada','RecomendadaConCapacitacion','Recomendada') NOT NULL,
+  missing_skills JSON NULL,
+  summary TEXT NULL,
+  raw_response LONGTEXT NULL,
+  evaluated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ai_evaluations_application FOREIGN KEY (application_id)
+    REFERENCES applications(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX idx_ai_evaluations_application_id (application_id),
+  INDEX idx_ai_evaluations_recommendation (recommendation)
+);
+
+-- Capacitaciones sugeridas por IA para cubrir brechas.
+CREATE TABLE IF NOT EXISTS training_recommendations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  ai_evaluation_id BIGINT UNSIGNED NOT NULL,
+  skill_name VARCHAR(120) NOT NULL,
+  recommendation_text TEXT NOT NULL,
+  provider VARCHAR(120) NULL,
+  resource_url VARCHAR(500) NULL,
+  estimated_hours INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_training_recommendations_ai FOREIGN KEY (ai_evaluation_id)
+    REFERENCES ai_evaluations(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX idx_training_recommendations_ai_evaluation_id (ai_evaluation_id)
+);
+
+-- Acciones administrativas (auditoria basica).
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  admin_user_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(120) NOT NULL,
+  target_type VARCHAR(60) NULL,
+  target_id BIGINT UNSIGNED NULL,
+  details JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_admin_audit_logs_admin FOREIGN KEY (admin_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  INDEX idx_admin_audit_logs_admin_user_id (admin_user_id),
+  INDEX idx_admin_audit_logs_created_at (created_at)
+);
+
+-- Datos iniciales de prueba (compatibles con tu login actual).
+INSERT INTO users (role, username, password, email, display_name, programming_language, age)
+VALUES
+('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba', NULL, NULL),
+('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25),
+('Admin', 'admin', 'admin123', 'admin@plataforma.com', 'Administrador', NULL, NULL)
+ON DUPLICATE KEY UPDATE username = VALUES(username);
+
+-- Inserta perfiles iniciales para que ya exista estructura por rol.
+INSERT INTO company_profiles (user_id, company_name, industry, contact_name)
+SELECT id, 'Empresa Prueba', 'Software', 'Contacto Empresa'
+FROM users WHERE username = 'empresa'
+ON DUPLICATE KEY UPDATE company_name = VALUES(company_name);
+
+INSERT INTO engineer_profiles (user_id, first_name, last_name, years_experience, seniority)
+SELECT id, 'Usuario', 'Prueba', 2.0, 'Junior'
+FROM users WHERE username = 'user'
+ON DUPLICATE KEY UPDATE first_name = VALUES(first_name);
+
+Validaciones/peticiones recomendadas para backend futuro:
+1) Registro:
+   - username y email unicos.
+   - role solo Usuario, Empresa o Admin.
+   - Empresa requiere company_profiles.
+   - Usuario requiere engineer_profiles.
+
+2) CV:
+   - solo Usuario puede subir a cv_documents.
+   - validar tamano, extension y hash duplicado.
+
+3) Vacantes:
+   - solo Empresa puede crear/editar job_posts.
+   - no permitir editar vacante Cerrada salvo Admin.
+
+4) Postulaciones:
+   - no duplicar (job_post_id, engineer_user_id).
+   - solo vacantes Abiertas aceptan postulacion.
+
+5) IA:
+   - cada ai_evaluations debe apuntar a applications real.
+   - recommendation y score se guardan para trazabilidad.
+
+6) Admin:
+   - toda accion sensible queda en admin_audit_logs.
 
 --------------------------------------------------
-PASO 5) CREAR USUARIO MYSQL PARA TU APP QT
+PASO 5) CREAR USUARIOS MYSQL (TU ROL + EQUIPO BACKEND)
 --------------------------------------------------
-Aun dentro de MariaDB, crea usuario de app.
-Opcion rapida (menos segura, pero simple para pruebas):
-CREATE USER 'qtuser'@'%' IDENTIFIED BY 'qtpass';
-GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
+Aun dentro de MariaDB, crea usuarios segun uso real:
+
+1) Usuario para TI (administrar DB desde phpMyAdmin):
+CREATE USER 'dbadmin'@'localhost' IDENTIFIED BY 'cambia_esto_admin';
+GRANT ALL PRIVILEGES ON login_db.* TO 'dbadmin'@'localhost';
+
+2) Usuario para el backend (FastAPI en el VPS):
+CREATE USER 'backend_app'@'localhost' IDENTIFIED BY 'cambia_esto_backend';
+GRANT SELECT, INSERT, UPDATE, DELETE ON login_db.* TO 'backend_app'@'localhost';
+
 FLUSH PRIVILEGES;
 
-Opcion recomendada (mas segura):
-- Reemplaza X.X.X.X por la IP publica de tu PC de desarrollo.
-CREATE USER 'qtuser'@'X.X.X.X' IDENTIFIED BY 'qtpass';
-GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'X.X.X.X';
-FLUSH PRIVILEGES;
+Notas importantes:
+- Para tu caso actual NO necesitas usar tu IP publica de PC en MySQL.
+- Si FastAPI y MariaDB corren en el mismo VPS, localhost es lo correcto.
+- Solo usa 'usuario'@'X.X.X.X' o 'usuario'@'%' si realmente habra conexion remota.
 
 Sal de MariaDB:
 EXIT;
@@ -123,6 +316,22 @@ sudo ufw enable
 2. Ideal: restringir acceso a phpMyAdmin por IP.
 Puedes agregar reglas en Apache para permitir solo tu IP.
 
+Si tu IP cambia seguido y quieres entrar siempre, usa esta alternativa:
+- Mantener acceso por HTTPS + password fuerte + autenticacion extra de Apache.
+
+Autenticacion extra (recomendada):
+sudo apt install -y apache2-utils
+sudo htpasswd -c /etc/phpmyadmin/.htpasswd tuusuarioadmin
+
+Edita /etc/phpmyadmin/apache.conf y dentro de <Directory /usr/share/phpmyadmin> agrega:
+AuthType Basic
+AuthName "Restricted phpMyAdmin"
+AuthUserFile /etc/phpmyadmin/.htpasswd
+Require valid-user
+
+Aplica cambios:
+sudo systemctl reload apache2
+
 3. HTTPS con Certbot (si tienes dominio):
 sudo apt install -y certbot python3-certbot-apache
 sudo certbot --apache -d tu-dominio.com
@@ -131,9 +340,10 @@ sudo certbot --apache -d tu-dominio.com
 Si puedes, usa tunel SSH para administrar DB y mantener 3306 cerrado.
 
 --------------------------------------------------
-PASO 8) (OPCIONAL) ABRIR MYSQL REMOTO PARA TU APP
+PASO 8) (OPCIONAL) ABRIR MYSQL REMOTO
 --------------------------------------------------
-Si tu app Qt se conectara directo al VPS, configura MariaDB:
+Solo si algun servicio FUERA del VPS se conectara directo a MySQL.
+Si FastAPI correra en el mismo VPS, NO lo necesitas.
 
 Edita:
 sudo nano /etc/mysql/mariadb.conf.d/50-server.cnf
@@ -153,40 +363,35 @@ Evita esta regla en produccion:
 sudo ufw allow 3306/tcp
 
 --------------------------------------------------
-PASO 9) CONECTAR TU PROYECTO QT (4eng-Login)
+PASO 9) ENTREGA PARA EL EQUIPO (FASTAPI + NGINX)
 --------------------------------------------------
-Tu proyecto ya esta preparado para leer variables de entorno:
-- LOGIN_DB_HOST
-- LOGIN_DB_PORT
-- LOGIN_DB_NAME
-- LOGIN_DB_USER
-- LOGIN_DB_PASSWORD
+Verifica que la base y tablas existan:
+SHOW DATABASES;
+USE login_db;
+SHOW TABLES;
+SELECT COUNT(*) FROM users;
 
-En PowerShell (PC de desarrollo), antes de ejecutar la app:
-$env:LOGIN_DB_HOST = "TU_IP_VPS"
-$env:LOGIN_DB_PORT = "3306"
-$env:LOGIN_DB_NAME = "login_db"
-$env:LOGIN_DB_USER = "qtuser"
-$env:LOGIN_DB_PASSWORD = "qtpass"
+Exporta SQL de entrega:
+mysqldump -u root -p login_db > login_db_entrega.sql
 
-Si quieres guardarlas permanentes en Windows:
-setx LOGIN_DB_HOST "TU_IP_VPS"
-setx LOGIN_DB_PORT "3306"
-setx LOGIN_DB_NAME "login_db"
-setx LOGIN_DB_USER "qtuser"
-setx LOGIN_DB_PASSWORD "qtpass"
+Entrega al equipo:
+- Archivo: login_db_entrega.sql
+- Nombre DB: login_db
+- Usuario sugerido backend: backend_app@localhost
+- Lista de tablas principales: users, engineer_profiles, company_profiles,
+  cv_documents, job_posts, applications, ai_evaluations,
+  training_recommendations, admin_audit_logs
 
-Luego abre nueva terminal/Qt Creator para que lea los valores.
+Import en servidor destino (si lo necesitan):
+mysql -u root -p login_db < login_db_entrega.sql
 
 --------------------------------------------------
-PASO 10) PRUEBA COMPLETA
+PASO 10) PRUEBA COMPLETA DESDE PHPMYADMIN
 --------------------------------------------------
 1. Abre phpMyAdmin y verifica que existe login_db y tabla users.
-2. Inicia tu app Qt.
-3. Intenta login con:
-   - empresa / empresa123
-   - user / user123
-4. Prueba registrar un usuario nuevo y confirma en phpMyAdmin que aparece en users.
+2. Revisa que todas las tablas nuevas existan.
+3. Ejecuta un SELECT simple en users y job_posts.
+4. Exporta login_db_entrega.sql y valida que el archivo no este vacio.
 
 --------------------------------------------------
 SOLUCION DE PROBLEMAS
@@ -195,8 +400,10 @@ A) Error en app: Driver not loaded / QMYSQL
 - Falta plugin QMYSQL compatible con tu version de Qt.
 - Instala/compila el plugin correspondiente a tu kit.
 
-B) Error acceso denegado para qtuser
-- Revisa host permitido del usuario MySQL (%, o tu IP exacta).
+Si no usaras Qt directo contra MySQL, puedes ignorar este punto.
+
+B) Error acceso denegado para backend_app o dbadmin
+- Revisa host permitido del usuario MySQL (localhost si corre en el VPS).
 - Revisa password y grants.
 
 C) phpMyAdmin no abre
@@ -204,10 +411,16 @@ C) phpMyAdmin no abre
 - Verifica configuracion enlazada de phpMyAdmin.
 - Revisa firewall UFW (80/443).
 
-D) Timeout al conectar desde Qt
-- Revisa si 3306 esta permitido desde tu IP.
+D) Timeout al conectar desde backend externo (si aplica)
+- Revisa si 3306 esta permitido desde el origen correcto.
 - Revisa bind-address.
 - Revisa reglas de firewall externo de Contabo si aplican.
+
+E) No puedes entrar siempre a phpMyAdmin
+- Usa dominio + HTTPS.
+- Si tu IP cambia, evita restriccion estricta por IP y usa autenticacion extra
+  con .htpasswd + password fuerte.
+- Mantiene 3306 cerrado si no hay necesidad de acceso remoto.
 
 --------------------------------------------------
 RECOMENDACION FINAL DE SEGURIDAD

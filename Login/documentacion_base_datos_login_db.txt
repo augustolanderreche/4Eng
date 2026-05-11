@@ -1,0 +1,269 @@
+DOCUMENTACION TECNICA - BASE DE DATOS login_db
+Fecha: 2026-05-11
+Proyecto: 4eng-Login (preparado para evolucion a backend FastAPI + Nginx)
+
+==================================================
+1) OBJETIVO DE ESTA BASE
+==================================================
+Esta base modela una plataforma con 3 tipos de cuenta:
+- Usuario (ingeniero)
+- Empresa
+- Admin
+
+Cubre:
+- autenticacion
+- perfiles por rol
+- CVs
+- vacantes
+- postulaciones
+- evaluacion IA
+- recomendaciones de capacitacion
+- auditoria admin
+
+==================================================
+2) ARQUITECTURA GENERAL Y POR QUE ESTA ASI
+==================================================
+Diseno elegido: tabla central de usuarios + tablas especializadas por dominio.
+
+Razon:
+- Evita mezclar todos los datos en una sola tabla gigante.
+- Permite crecer sin romper login/registro actual.
+- Mantiene integridad con claves foraneas.
+- Facilita que backend futuro aplique reglas por rol.
+
+Flujo de negocio (resumen):
+1. Se registra usuario o empresa en users.
+2. Se completa perfil en engineer_profiles o company_profiles.
+3. Empresa crea vacantes en job_posts.
+4. Usuario sube CV (cv_documents) y postula (applications).
+5. IA evalua postulacion (ai_evaluations) y sugiere capacitacion (training_recommendations).
+6. Admin audita acciones sensibles (admin_audit_logs).
+
+==================================================
+3) TABLAS Y FUNCION DE CADA UNA
+==================================================
+A) users
+- Proposito: autenticacion y datos base de cualquier cuenta.
+- Campos clave:
+  - id (PK)
+  - role: Usuario | Empresa | Admin
+  - username (UNIQUE)
+  - email (UNIQUE)
+  - password (actual en texto plano, temporal)
+  - password_hash (preparado para migrar a hash)
+  - is_active
+  - created_at, updated_at
+- Por que existe:
+  - Punto unico de identidad de cuenta para el sistema.
+
+B) engineer_profiles
+- Proposito: datos extendidos del rol Usuario (ingeniero).
+- Relacion: user_id -> users.id (1 a 1)
+- Por que existe:
+  - Separar datos de perfil tecnico sin recargar users.
+
+C) company_profiles
+- Proposito: datos extendidos del rol Empresa.
+- Relacion: user_id -> users.id (1 a 1)
+- Por que existe:
+  - Guardar info de negocio y contacto empresarial.
+
+D) cv_documents
+- Proposito: CVs subidos por ingenieros.
+- Relacion: engineer_user_id -> users.id (1 a N)
+- Campos utiles: file_url, file_sha256, extracted_text, parsed_skills(JSON)
+- Por que existe:
+  - Base de entrada para analisis IA y matching.
+
+E) job_posts
+- Proposito: vacantes creadas por empresas.
+- Relacion: company_user_id -> users.id (1 a N)
+- Campos utiles: required_skills(JSON), status, location_mode
+- Por que existe:
+  - Modelo principal de demanda laboral.
+
+F) applications
+- Proposito: postulacion de un ingeniero a una vacante.
+- Relaciones:
+  - job_post_id -> job_posts.id
+  - engineer_user_id -> users.id
+  - cv_document_id -> cv_documents.id (nullable)
+- Restriccion importante:
+  - UNIQUE(job_post_id, engineer_user_id) evita postulacion duplicada.
+- Por que existe:
+  - Vincular candidato + vacante + estado de proceso.
+
+G) ai_evaluations
+- Proposito: resultado del analisis IA por postulacion.
+- Relacion: application_id -> applications.id
+- Campos utiles: score, recommendation, missing_skills(JSON), raw_response
+- Por que existe:
+  - Trazabilidad de decisiones IA y explicabilidad.
+
+H) training_recommendations
+- Proposito: brechas y capacitaciones sugeridas por IA.
+- Relacion: ai_evaluation_id -> ai_evaluations.id
+- Por que existe:
+  - Convertir brecha de skills en accion concreta para usuario.
+
+I) admin_audit_logs
+- Proposito: auditoria de acciones administrativas.
+- Relacion: admin_user_id -> users.id
+- Por que existe:
+  - Seguridad, trazabilidad y cumplimiento.
+
+==================================================
+4) RELACIONES (MAPA RAPIDO)
+==================================================
+users (1) ---- (1) engineer_profiles
+users (1) ---- (1) company_profiles
+users (1) ---- (N) cv_documents
+users (1) ---- (N) job_posts
+users (1) ---- (N) applications [como engineer_user_id]
+job_posts (1) - (N) applications
+cv_documents (1) - (N) applications (opcional)
+applications (1) - (N) ai_evaluations
+ai_evaluations (1) - (N) training_recommendations
+users (1) ---- (N) admin_audit_logs [como admin_user_id]
+
+==================================================
+5) DATOS DE PRUEBA CARGADOS ACTUALMENTE
+==================================================
+Tabla users (segun seed actual):
+1. role=Empresa
+   username=empresa
+   password=empresa123
+   email=empresa@empresa.com
+   display_name=Empresa Prueba
+
+2. role=Usuario
+   username=user
+   password=user123
+   email=user@mail.com
+   display_name=Usuario Prueba
+   programming_language=Python
+   age=25
+
+3. role=Admin
+   username=admin
+   password=admin123
+   email=admin@plataforma.com
+   display_name=Administrador
+
+Datos de perfil de prueba:
+- company_profiles: registro inicial para empresa
+- engineer_profiles: registro inicial para user
+
+Importante:
+Estos datos son de prueba y NO son seguros para produccion.
+
+==================================================
+6) CONEXIONES Y ACCESO
+==================================================
+Acceso actual de administracion:
+- phpMyAdmin via navegador: http://IP_DEL_VPS/phpmyadmin/
+
+Acceso previsto para backend:
+- Usuario recomendado: backend_app@localhost
+- Permisos recomendados: SELECT, INSERT, UPDATE, DELETE sobre login_db.*
+
+Acceso de admin DB:
+- Usuario recomendado: dbadmin@localhost
+- Permisos: ALL PRIVILEGES sobre login_db.*
+
+Por que localhost:
+- Si FastAPI y MariaDB corren en el mismo VPS, es mas seguro que abrir acceso remoto.
+
+==================================================
+7) ESTADO ACTUAL DE SEGURIDAD DE CREDENCIALES
+==================================================
+Estado actual:
+- La columna password contiene texto plano.
+
+Riesgo:
+- Si hay fuga de DB, se exponen contrasenas reales.
+
+Objetivo:
+- No guardar nunca contrasena en texto plano.
+- Guardar solo hash fuerte + verificacion segura en backend.
+
+==================================================
+8) COMO SENSIBILIZAR/PROTEGER DATOS SENSIBLES
+==================================================
+8.1 Contrasenas (obligatorio)
+Plan recomendado:
+1. Dejar de usar users.password para login real.
+2. Usar users.password_hash para almacenar hash.
+3. El backend FastAPI debe:
+   - al registrar: hash(password) y guardar en password_hash
+   - al login: verify(password_ingresada, password_hash_guardado)
+
+Algoritmos recomendados:
+- Argon2id (preferido)
+- bcrypt (alternativa valida)
+
+8.2 Migracion de datos de prueba (paso inicial)
+- Cambiar las 3 cuentas de prueba por hashes.
+- Luego vaciar o eliminar columna password cuando el frontend/backend ya no la use.
+
+8.3 Minimo de privacidad en consultas
+- No hacer SELECT * en endpoints publicos.
+- Devolver solo campos necesarios.
+
+8.4 Enmascarar datos en paneles
+Ejemplo de email enmascarado:
+- usuario@mail.com -> u***o@mail.com
+
+Ejemplo SQL de vista enmascarada basica:
+CREATE OR REPLACE VIEW v_users_masked AS
+SELECT
+  id,
+  role,
+  username,
+  CONCAT(LEFT(email,1), '***', SUBSTRING(email, LOCATE('@', email)-1)) AS email_masked,
+  display_name,
+  is_active,
+  created_at
+FROM users;
+
+Nota:
+El enmascarado en SQL ayuda para vistas admin; la proteccion real de contrasena es hash.
+
+8.5 Cifrado en transito
+- Activar HTTPS para phpMyAdmin (dominio + certbot) para no enviar credenciales en texto claro.
+
+8.6 Principio de minimo privilegio
+- backend_app: sin permisos DDL (no CREATE/DROP).
+- dbadmin: solo para administracion.
+- No usar root para app ni para uso diario.
+
+==================================================
+9) VALIDACIONES QUE DEBE HACER EL BACKEND
+==================================================
+- role permitido: Usuario, Empresa, Admin.
+- username/email unicos.
+- applications: impedir duplicado por vacante y usuario.
+- Solo Empresa crea job_posts.
+- Solo Usuario sube CV y postula.
+- Registrar auditoria en admin_audit_logs para acciones de admin.
+
+==================================================
+10) RECOMENDACIONES DE EVOLUCION (CORTO PLAZO)
+==================================================
+1. Migrar login a password_hash en backend.
+2. Marcar users.password como deprecado.
+3. Crear vistas seguras para paneles de administracion.
+4. Agregar indice en users(role) si crece volumen.
+5. Definir politicas de borrado/anomizacion de CV.
+
+==================================================
+11) CHECKLIST DE ENTREGA AL EQUIPO
+==================================================
+- DB creada: login_db
+- Tablas creadas: OK
+- Datos de prueba: OK
+- Export SQL: login_db_entrega.sql
+- Credenciales backend: backend_app@localhost
+- Documento tecnico: este archivo
+
+FIN
