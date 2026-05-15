@@ -1,29 +1,51 @@
 RESUMEN COMPLETO DE PREPARACIÓN - FASE 2 INICIAL
-Fecha: 2026-05-15
+Fecha última actualización: 2026-05-15
 Proyecto: 4eng-Login
 
 ==================================================
-¿QUE HICIMOS?
+¿QUE HICIMOS? (ESTADO ACTUAL AL 2026-05-15)
 ==================================================
-Preparamos los procedimientos recomendados (3 cambios principales):
 
-1. ✅ Script SQL con:
-   - Columna last_login para auditoria
-   - 13 índices para performance Fase 2
+COMPLETADO:
+1. ✅ Migración VPS aplicada (migration_phase2_initial.sql)
+   - Columna last_login agregada a users en VPS
+   - 13 índices creados para performance de Fase 2
 
-2. ✅ Instrucciones paso a paso para aplicar en VPS
+2. ✅ Base de datos SQLite LOCAL implementada
+   - Archivo: localdbconfig.h
+   - 7 tablas: sessions, login_attempts, failed_attempts,
+     offline_cache, user_preferences, audit_log, sync_metadata
+   - Se crea automáticamente en primera ejecución
 
-3. ✅ Documentación de estado final + referencia FastAPI
+3. ✅ Lógica de sesiones en Qt (mainwindow.cpp actualizado)
+   - Auto-login: recupera sesión al abrir app
+   - Bloqueo: 5 intentos fallidos → 15 min bloqueado
+   - Historial: login_attempts guardado siempre
+   - Sync al cerrar: closeEvent() sincroniza y cierra sesión
+   - Background sync: timer cada 5 minutos (placeholder listo)
+
+4. ✅ Instrucciones paso a paso para migración en VPS (COMPLETADO)
+
+5. ✅ Documentación de estado final + referencia FastAPI
+
+PENDIENTE INMEDIATO:
+⚠ Fix QMYSQL driver en Windows (ver pendientes_proyecto_final.txt)
 
 ==================================================
-ARCHIVOS CREADOS
+ARCHIVOS CREADOS/MODIFICADOS
 ==================================================
 
 c:\Users\aland\4Eng\Login\migration_phase2_initial.sql
 ├─ ¿Qué es?: Script SQL listo para ejecutar en BD
 ├─ Contiene: ALTER TABLE + CREATE INDEX (13 índices)
-├─ Cómo usarlo: Copiar-pegar en MySQL o scp al VPS
-└─ Duración: ~2 minutos
+├─ Estado: ✅ APLICADO EN VPS el 2026-05-15
+└─ Duración aplicación: ~2 minutos
+
+c:\Users\aland\4Eng\Login\localdbconfig.h  ← NUEVO 2026-05-15
+├─ ¿Qué es?: Header C++ con toda la lógica SQLite local
+├─ Contiene: 7 tablas, funciones de sesión, bloqueo, caché, auditoría
+├─ Uso: Incluir en mainwindow.cpp (ya incluido)
+└─ BD en: %APPDATA%/4eng-Login/local.db (auto-creado)
 
 c:\Users\aland\4Eng\Login\INSTRUCCIONES_MIGRACION_VPS.txt
 ├─ ¿Qué es?: Paso a paso para aplicar cambios en el VPS

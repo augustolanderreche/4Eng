@@ -1,0 +1,329 @@
+ESTRUCTURA DE BASE DE DATOS SQLite LOCAL
+Fecha: 2026-05-15
+Proyecto: 4eng-Login
+Propósito: Gestión de sesiones, bloqueos y caché offline local
+
+==================================================
+¿DÓNDE SE GUARDA?
+==================================================
+Ruta: %APPDATA%/4eng-Login/local.db
+Ejemplo en Windows: C:\Users\aland\AppData\Roaming\4eng-Login\local.db
+
+Es una base de datos SQLite local, no en el VPS.
+Se crea automáticamente al primer login.
+
+==================================================
+TABLAS Y PROPÓSITO
+==================================================
+
+1. TABLA: sessions
+──────────────────
+Propósito: Mantener la sesión actual del usuario
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- user_id (INTEGER) → ID del usuario en VPS
+- username (TEXT UNIQUE) → nombre único
+- role (TEXT) → 'Usuario', 'Empresa', 'Admin'
+- display_name (TEXT) → nombre a mostrar en UI
+- login_timestamp (DATETIME) → cuándo se logueó
+- last_activity (DATETIME) → último click/interacción
+- device_fingerprint (TEXT) → huella del dispositivo (opcional)
+- is_active (BOOLEAN) → sesión activa o no
+
+Flujo:
+1. Usuario abre app y se loguea correctamente
+2. Se guarda fila en sessions con is_active=1
+3. Al cerrar app: is_active=0 (ver closeEvent en mainwindow.cpp)
+4. Al abrir app: si hay sesión con is_active=1, auto-login (setupAutoLogin)
+
+Ventaja:
+- Auto-login sin pedir contraseña
+- Si cierra app a las 10:30 y abre a las 11:00, sigue logueado
+- Sesión persiste entre reinicios
+
+────────────────────────────────────────────────
+
+2. TABLA: login_attempts
+────────────────────────
+Propósito: Historial de intentos de login (auditoría local)
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- username (TEXT) → usuario que intentó
+- login_timestamp (DATETIME) → cuándo fue el intento
+- success (BOOLEAN) → ¿fue exitoso (1) o falló (0)?
+- ip_vps (TEXT) → para futuros usos (backend)
+- device_info (TEXT) → info del PC
+
+Flujo:
+1. Usuario intenta login (exitoso o fallido)
+2. Se registra en login_attempts con success=1 o 0
+3. Se guardan los últimos 5 exitosos para mostrar "Últimas conexiones"
+
+Queries útiles:
+- SELECT * FROM login_attempts WHERE username='user' AND success=1 LIMIT 5
+  → Ver últimas 5 conexiones exitosas del usuario
+
+Ventaja:
+- Auditoría local
+- Mostrar "Última conexión: 15/05 10:30"
+- Detectar accesos sospechosos
+
+────────────────────────────────────────────────
+
+3. TABLA: failed_attempts
+──────────────────────────
+Propósito: Controlar bloqueos por intentos fallidos
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- username (TEXT UNIQUE) → usuario (uno por usuario)
+- attempt_count (INTEGER) → contador actual (0-5+)
+- last_failed_attempt (DATETIME) → cuándo fue el último fallo
+- blocked_until (DATETIME) → hasta cuándo está bloqueado (NULL si no está bloqueado)
+- is_blocked (BOOLEAN) → 1=bloqueado, 0=no bloqueado
+
+Lógica:
+- 5 intentos fallidos → BLOQUEADO por 15 minutos
+- Pasados 15 minutos → desbloquea automáticamente
+- Login exitoso → resetea attempt_count a 0
+
+Flujo:
+1. Usuario ingresa contraseña incorrecta
+2. attempt_count incrementa (1, 2, 3, 4, 5)
+3. En 5: is_blocked=1, blocked_until=NOW()+15min
+4. Si intenta login antes de blocked_until: muestra "Bloqueado 10 minutos"
+5. Login exitoso: attempt_count=0, is_blocked=0
+
+Ventaja:
+- Bloqueo INMEDIATO sin consultar VPS
+- Protección contra ataques bruteforce locales
+- No requiere conexión a internet
+
+────────────────────────────────────────────────
+
+4. TABLA: offline_cache
+────────────────────────
+Propósito: Guardar datos del VPS para funcionar sin internet
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- cache_type (TEXT) → 'job_posts', 'cv_documents', 'applications', etc.
+- cache_key (TEXT) → identificador único
+- cache_data (TEXT/JSON) → datos en JSON
+- cached_at (DATETIME) → cuándo se descargó
+- expires_at (DATETIME) → cuándo expira (24h típicamente)
+- user_id (INTEGER) → de quién es este caché
+
+Casos de uso:
+- Usuario abre app SIN internet
+- App carga últimas vacantes/CVs del caché local (aunque sean de hace 8 horas)
+- Cuando hay internet: sincroniza automáticamente
+- Vacantes de hace >24h se elimina automáticamente
+
+Flujo:
+1. En background cada 5 minutos: descargar job_posts del VPS → guardar en caché
+2. Usuario abre app sin internet
+3. Lee del caché local en lugar de fallar
+4. Muestra "Datos de hace 8 horas" (opcional mostrar advertencia)
+5. Cuando conecta a internet: actualiza automáticamente
+
+Ventaja:
+- Funciona offline
+- UX mejor (no muestra "Error: sin conexión")
+- Sincronización automática en background
+
+────────────────────────────────────────────────
+
+5. TABLA: user_preferences
+───────────────────────────
+Propósito: Preferencias locales por usuario
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- username (TEXT UNIQUE)
+- theme (TEXT) → 'dark' o 'light'
+- language (TEXT) → 'es' o 'en'
+- auto_login (BOOLEAN) → recordar sesión automáticamente
+- last_viewed_section (TEXT) → dónde estaba cuando cerró
+- font_size (TEXT) → 'small', 'medium', 'large'
+
+Ventaja:
+- Recupera tema/idioma al abrir app
+- UX consistente entre reinicios
+- No envía datos al servidor (privacidad)
+
+────────────────────────────────────────────────
+
+6. TABLA: audit_log
+────────────────────
+Propósito: Auditoría local de acciones sensibles
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- username (TEXT)
+- action (TEXT) → 'login', 'logout', 'download_cv', 'login_blocked', etc.
+- timestamp (DATETIME) → cuándo ocurrió
+- details (TEXT) → descripción adicional
+
+Acciones registradas:
+- login: Login exitoso
+- login_failed: Intento de login fallido
+- login_blocked: Usuario bloqueado por intentos fallidos
+- session_timeout: Sesión expirada por inactividad
+- app_closed: Aplicación cerrada
+- download_cv: Usuario descargó un CV
+- view_candidates: Usuario vió candidatos
+
+Ventaja:
+- Cumplimiento normativo (GDPR, LGPD)
+- Saber qué hizo localmente
+- Si hay robo de PC: qué se accedió
+
+────────────────────────────────────────────────
+
+7. TABLA: sync_metadata
+─────────────────────────
+Propósito: Rastrear cuándo se sincronizó cada tipo de datos
+
+Campos:
+- id (INTEGER PRIMARY KEY)
+- sync_type (TEXT UNIQUE) → 'job_posts', 'applications', 'user_profile'
+- last_sync (DATETIME) → cuándo fue el último sync
+- status (TEXT) → 'pending', 'success', 'error'
+
+Ventaja:
+- No re-descargar datos que ya están actualizados
+- Saber si un sync falló
+- Sincronización diferencial (solo cambios)
+
+==================================================
+FLUJO COMPLETO: LOGIN + SINCRONIZACIÓN + CIERRE
+==================================================
+
+PRIMER LOGIN (desde 0):
+1. Usuario abre app
+   → setupAutoLogin() intenta recuperar sesión
+   → No hay sesión, muestra login form
+   
+2. Usuario ingresa username/password
+   → attemptLogin() se ejecuta
+   
+3. Verificar bloqueos locales:
+   → checkAndHandleFailedAttempts(username)
+   → Si está bloqueado por 5 intentos: bloquea y vuelve
+   
+4. Consultar VPS:
+   → validateCredentials(username, password)
+   → Si VPS dice "no": incrementar failed_attempts, guardar en login_attempts(success=0)
+   → Si VPS dice "sí": continuar
+   
+5. Guardar sesión local:
+   → saveLoginToLocal(username, role, displayName)
+   → Inserta en sessions(is_active=1)
+   → Inserta en login_attempts(success=1)
+   → Resetea failed_attempts
+   → Registra en audit_log(action='login')
+   
+6. App abierta:
+   → setupBackgroundSync() inicia timers
+   → Cada 5 minutos: performBackgroundSync()
+   → Sincroniza caché offline
+   → Actualiza last_activity en sessions
+
+──────────────────────────────────────────────────
+
+SEGUNDO LOGIN (sesión activa):
+1. Usuario abre app
+   → setupAutoLogin()
+   → Busca en sessions WHERE is_active=1
+   → Encuentra sesión activa
+   → Auto-login (sin pedir password)
+   
+──────────────────────────────────────────────────
+
+CIERRE DE APP:
+1. Usuario cierra app
+   → closeEvent() se dispara
+   
+2. Si hay usuario logueado:
+   → syncOfflineCache()
+   → Descarga últimos datos del VPS (si hay conexión)
+   
+3. Registrar cierre:
+   → logAction(username, 'app_closed')
+   
+4. Cerrar sesión:
+   → closeSession()
+   → UPDATE sessions SET is_active=0 WHERE is_active=1
+
+──────────────────────────────────────────────────
+
+INACTIVIDAD (30 minutos sin actividad):
+1. m_activityTimer dispara timeout
+   → Session timeout
+   
+2. Si hay usuario logueado:
+   → logAction(username, 'session_timeout')
+   → closeSession()
+   → m_currentUsername = ""
+   
+3. Próximo login: pide contraseña nuevamente
+
+==================================================
+MÉTODOS PRINCIPALES EN localdbconfig.h
+==================================================
+
+getLocalConnection() → obtiene BD SQLite
+saveSession() → crea/actualiza sesión activa
+logLoginAttempt() → registra intento de login
+incrementFailedAttempts() → incrementa contador
+resetFailedAttempts() → resetea contador
+isUserBlocked() → verifica si está bloqueado
+getActiveSession() → obtiene sesión activa
+closeSession() → cierra sesión
+logAction() → registra acción en audit log
+getLastLoginAttempts() → últimas N conexiones
+cacheData() → guarda datos en caché
+getCachedData() → recupera datos del caché
+cleanExpiredCache() → limpia caché expirado
+
+==================================================
+INTEGRACIONES EN mainwindow.cpp
+==================================================
+
+setupDatabase() → VPS MySQL (existente)
+setupLocalDatabase() → SQLite local (NUEVO)
+setupAutoLogin() → auto-login si hay sesión (NUEVO)
+setupBackgroundSync() → sincronización automática (NUEVO)
+attemptLogin() → login con bloqueos locales (MODIFICADO)
+closeEvent() → sincronizar al cerrar (NUEVO)
+performBackgroundSync() → sincronización en background (NUEVO)
+checkAndHandleFailedAttempts() → verificar bloqueos (NUEVO)
+saveLoginToLocal() → guardar sesión local (NUEVO)
+
+==================================================
+PRÓXIMAS IMPLEMENTACIONES
+==================================================
+
+1. Sincronización real de offline_cache
+   - Descargar job_posts, applications, cv_documents del VPS
+   - Guardar en caché con JSON
+   - Mostrar en UI si hay caché disponible
+
+2. UI de "Últimas conexiones"
+   - Mostrar "Última conexión: 15/05 10:30"
+   - Botón para ver historial local
+
+3. Sincronización de cambios
+   - Si usuario descarga CV offline, guardarlo local
+   - Al conectar a internet: subir cambios
+
+4. Encriptación de caché
+   - Encriptar offline_cache con contraseña de usuario
+   - Si PC se roba: datos no legibles sin contraseña
+
+==================================================
+FIN
+==================================================

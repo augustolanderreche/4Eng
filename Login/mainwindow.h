@@ -8,6 +8,7 @@ class QLabel;
 class QLineEdit;
 class QPushButton;
 class QFrame;
+class QTimer;
 
 class MainWindow : public QMainWindow
 {
@@ -17,13 +18,23 @@ public:
     MainWindow(QWidget *parent = nullptr);
     ~MainWindow() override;
 
+protected:
+    void closeEvent(QCloseEvent *event) override;
+
 private slots:
     void attemptLogin();
     void openRegisterWindow();
+    void performBackgroundSync();
+    void checkAutoLogin();
 
 private:
     void setupUi();
     void setupDatabase();
+    void setupLocalDatabase();
+    void setupAutoLogin();
+    void setupBackgroundSync();
+    void syncOfflineCache();
+    
     bool validateCredentials(const QString &username, const QString &password);
     QString getDisplayName(const QString &username);
     QString getRole(const QString &username);
@@ -31,13 +42,25 @@ private:
     void openEmpresaWindow(const QString &displayName);
     void openUserWindow(const QString &displayName);
 
-    QSqlDatabase m_db;
+    // Local DB
+    int saveLoginToLocal(const QString &username, const QString &role, const QString &displayName);
+    bool checkAndHandleFailedAttempts(const QString &username);
+    void updateLastActivity();
+
+    QSqlDatabase m_db;           // VPS MySQL
+    QSqlDatabase m_localDb;      // Local SQLite
     QLabel *m_statusLabel;
 
     QLineEdit *m_loginUserEdit;
     QLineEdit *m_loginPassEdit;
     QPushButton *m_loginButton;
     QPushButton *m_openRegisterButton;
+
+    QString m_currentUsername;   // Usuario actualmente logueado
+    int m_currentUserId;         // ID del usuario en VPS
+    
+    QTimer *m_syncTimer;         // Timer para sincronización automática
+    QTimer *m_activityTimer;     // Timer para rastrear inactividad
 };
 
 #endif // MAINWINDOW_H

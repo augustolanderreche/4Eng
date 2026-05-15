@@ -1,6 +1,6 @@
 PROJECT: 4eng-Login
-LAST UPDATED: 2026-05-11
-STACK: Qt Widgets + Qt SQL (QMYSQL) + C++17 + qmake
+LAST UPDATED: 2026-05-15
+STACK: Qt Widgets + Qt SQL (QMYSQL + QSQLITE) + C++17 + qmake
 WORKSPACE ROOT: c:\Users\aland\4Eng\Login
 OS (CURRENT DEV MACHINE): Windows
 
@@ -12,7 +12,10 @@ PRIMARY CONTEXT FILE:
 1) QUICK SUMMARY
 ==================================================
 This is a desktop login/registration app built with Qt Widgets.
-It connects directly to MySQL/MariaDB using Qt SQL driver QMYSQL.
+It connects directly to MySQL/MariaDB (VPS) using Qt SQL driver QMYSQL
+AND uses a local SQLite database for session management, offline cache,
+and bruteforce protection.
+
 Users can:
 - Log in with username/password.
 - Register as Empresa (company) or Usuario (individual).
@@ -23,32 +26,51 @@ Users can:
 Database credentials are centralized and read from environment variables
 through databaseconfig.h.
 
+LOCAL SQLITE (NEW - 2026-05-15):
+- Managed via localdbconfig.h
+- Path: %APPDATA%/4eng-Login/local.db (created automatically on first run)
+- Handles: sessions, login history, bruteforce blocking, offline cache,
+           user preferences, audit log, sync metadata
+
 IMPORTANT OPERATIONS STATUS (VPS):
 - phpMyAdmin was enabled and tested successfully from browser.
 - Later it was intentionally disabled in Apache for security (current result: /phpmyadmin returns 404 Not Found).
 - UFW now allows 80/443 (web access control moved to Apache config state).
 - Docker exists on VPS with project containers observed (vps-api-1, vps-db-1); phpMyAdmin in this setup was not served from Docker.
+- Migration phase2_initial.sql was applied on VPS: added last_login column + 13 indexes.
+
+KNOWN ISSUE:
+- QMYSQL driver not found on Windows dev machine (warning on startup).
+  The app starts normally but cannot connect to VPS MySQL.
+  Fix: copy qsqlmysql.dll to Qt plugins folder (see section 7).
+  SQLite local DB works fine regardless.
 
 ==================================================
 2) CURRENT FILE STRUCTURE (SOURCE LEVEL)
 ==================================================
 - 4eng-Login.pro
 - main.cpp
-- databaseconfig.h
-- mainwindow.h
-- mainwindow.cpp
-- registerwindow.h
-- registerwindow.cpp
-- empresawindow.h
-- empresawindow.cpp
-- userwindow.h
-- userwindow.cpp
+- databaseconfig.h              ← VPS MySQL connection helper
+- localdbconfig.h               ← LOCAL SQLite connection helper (NEW 2026-05-15)
+- mainwindow.h / mainwindow.cpp ← Login form + local DB logic (UPDATED 2026-05-15)
+- registerwindow.h / registerwindow.cpp
+- empresawindow.h / empresawindow.cpp
+- userwindow.h / userwindow.cpp
+
+Documentation files:
+- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt  ← este archivo
+- SQLITE_LOCAL_DB_STRUCTURE.txt           ← estructura SQLite local completa (NEW 2026-05-15)
+- ESTADO_SCHEMA_POST_MIGRACION.txt        ← estado del schema VPS post-migración
+- INSTRUCCIONES_MIGRACION_VPS.txt         ← paso a paso migración VPS (COMPLETADO)
+- RESUMEN_PREPARACION_FASE2.txt           ← resumen de preparación Fase 2
+- pendientes_proyecto_final.txt           ← tareas pendientes actualizadas
+- documentacion_base_datos_login_db.txt   ← documentación técnica de la BD VPS
+- migration_phase2_initial.sql            ← script SQL aplicado en VPS
 - db_connection_instructions.txt
 - tutorial_contabo_phpmyadmin_paso_a_paso.txt
-- documentacion_base_datos_login_db.txt
-- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt
-- readme.md (currently empty/whitespace)
-- build/ (generated artifacts, may contain stale old names)
+- fase_2_fastapi_explicacion.txt
+- REFERENCIA_FASTAPI_IMPLEMENTATION.txt
+- readme.md
 
 Important rename already done:
 - old: adminwindow.h/.cpp + AdminWindow
@@ -72,6 +94,7 @@ SOURCES:
 
 HEADERS:
 - databaseconfig.h
+- localdbconfig.h       ← NUEVO
 - empresawindow.h
 - mainwindow.h
 - registerwindow.h
@@ -79,8 +102,157 @@ HEADERS:
 
 Generated build directory:
 - build/Desktop_Qt_6_11_0_MinGW_64_bit-Debug/...
-Contains generated files (moc_*.cpp). Some stale generated files may still
-reference old adminwindow naming until clean rebuild.
+
+==================================================
+4) UI FLOW / NAVIGATION
+==================================================
+Entry point:
+- main.cpp creates QApplication, sets Fusion style and a global dark stylesheet,
+  then shows MainWindow.
+
+MainWindow behavior (UPDATED):
+- On startup: checks SQLite for active session → auto-login if found.
+- If no session: displays login form (username, password).
+- Buttons: Entrar, Registrar.
+- Entrar -> attemptLogin().
+- Registrar -> opens RegisterWindow.
+
+Login logic in MainWindow (UPDATED 2026-05-15):
+1. Validate non-empty fields.
+2. checkAndHandleFailedAttempts(username) → check local SQLite block.
+   - If blocked (>=5 failed attempts): show "Bloqueado X segundos", abort.
+3. validateCredentials(username, password) → check VPS MySQL.
+4. If VPS fails: incrementFailedAttempts() in SQLite, log attempt.
+5. If VPS success:
+   - role = getRole(username), displayName = getDisplayName(username)
+   - saveLoginToLocal() → save session in SQLite, reset failed attempts
+   - role == "Empresa" => openEmpresaWindow(displayName)
+   - else => openUserWindow(displayName)
+
+Auto-login (NEW):
+- setupAutoLogin() called on startup.
+- Checks SQLite sessions WHERE is_active=1.
+- If found: skips login form, goes directly to role window.
+
+Background sync (NEW):
+- QTimer every 5 minutes: performBackgroundSync() → syncOfflineCache().
+- QTimer inactivity 30 min: closes session automatically.
+
+Close event (NEW):
+- closeEvent() triggers syncOfflineCache() + logAction("app_closed") + closeSession().
+
+RegisterWindow behavior:
+- QTabWidget with two tabs: Empresa / Usuario
+- Empresa: username, password, email
+- Usuario: firstName, lastName, username, password, language, email, age (10-120)
+- Validation: no empty fields, email contains '@', username unique
+- Inserts to VPS MySQL users table
+
+Post-login windows:
+- EmpresaWindow: welcome label "Hola Empresa <displayName>"
+- UserWindow: welcome label "Hola Usuario <displayName>"
+
+==================================================
+5) DATABASE CONNECTION MODEL
+==================================================
+
+--- VPS MYSQL (databaseconfig.h) ---
+Connection name: login_connection
+Function: DatabaseConfig::getLoginConnection()
+Environment variables:
+- LOGIN_DB_HOST (default: 127.0.0.1)
+- LOGIN_DB_PORT (default: 3306)
+- LOGIN_DB_NAME (default: login_db)
+- LOGIN_DB_USER (default: qtuser)
+- LOGIN_DB_PASSWORD (default: qtpass)
+
+⚠ WARNING: QMYSQL driver missing on Windows dev machine.
+  App starts but cannot connect to VPS.
+  Fix: see section 7.
+
+--- LOCAL SQLITE (localdbconfig.h) [NEW 2026-05-15] ---
+Connection name: local_connection
+Function: LocalDBConfig::getLocalConnection()
+Path: QStandardPaths::AppDataLocation + "/local.db"
+      = C:\Users\aland\AppData\Roaming\4eng-Login\local.db
+Created: automatically on first run (directory + file)
+
+Who uses it:
+- MainWindow::setupLocalDatabase()
+- MainWindow::setupAutoLogin()
+- MainWindow::attemptLogin()
+- MainWindow::closeEvent()
+
+==================================================
+6) DATABASE SCHEMA
+==================================================
+
+--- VPS MySQL (login_db) - ESTADO POST-MIGRACIÓN 2026-05-15 ---
+Tablas: users, engineer_profiles, company_profiles, cv_documents,
+        job_posts, applications, ai_evaluations, training_recommendations,
+        admin_audit_logs
+
+users campos clave:
+- id, role, username (UNIQUE), password (texto plano, Qt lo usa),
+  email (UNIQUE), display_name, programming_language, age,
+  password_hash (NULL, FastAPI lo usará), is_active,
+  created_at, updated_at,
+  last_login (DATETIME NULL) ← NUEVO, FastAPI lo actualizará
+
+Índices agregados (migration_phase2_initial.sql):
+- idx_users_username, idx_users_email, idx_users_role
+- idx_applications_engineer, idx_applications_job, idx_applications_company, idx_applications_status
+- idx_job_posts_company, idx_job_posts_status
+- idx_cv_documents_engineer
+- idx_ai_evaluations_application
+- idx_engineer_profiles_user, idx_company_profiles_user
+
+--- LOCAL SQLite (local.db) [NEW 2026-05-15] ---
+Ver SQLITE_LOCAL_DB_STRUCTURE.txt para detalle completo.
+
+Tablas:
+- sessions          → sesión activa, auto-login
+- login_attempts    → historial de logins (exitosos y fallidos)
+- failed_attempts   → bloqueo por intentos fallidos (>=5 → 15 min bloqueado)
+- offline_cache     → datos del VPS en JSON para funcionar sin internet
+- user_preferences  → tema, idioma, configuración local
+- audit_log         → auditoría de acciones locales
+- sync_metadata     → rastreo de sincronizaciones
+
+==================================================
+7) FIX PENDIENTE: QMYSQL DRIVER EN WINDOWS
+==================================================
+Problema: "can not load requested driver 'QMYSQL'"
+Causa: qsqlmysql.dll no está en la ruta de plugins de Qt.
+
+Solución:
+1. Buscar qsqlmysql.dll en la instalación de Qt:
+   C:\Qt\6.11.0\mingw_64\plugins\sqldrivers\qsqlmysql.dll
+2. Copiar al directorio del ejecutable:
+   build/Desktop_Qt_6_11_0_MinGW_64_bit-Debug/debug/sqldrivers/
+3. También copiar libmysql.dll al directorio del ejecutable.
+4. Libmysql.dll se obtiene de MySQL Connector/C o de la instalación de MariaDB.
+
+Sin este fix: Login contra VPS no funciona, SQLite local sí funciona.
+
+==================================================
+8) PRÓXIMOS PASOS RECOMENDADOS
+==================================================
+Prioridad INMEDIATA:
+1. ✅ Fix QMYSQL driver (ver sección 7) → para que login VPS funcione
+2. Implementar sincronización real de offline_cache en syncOfflineCache()
+3. UI "Últimas conexiones": mostrar historial de login_attempts en la pantalla de login
+
+Prioridad ALTA:
+4. FastAPI endpoints: /auth/login, /auth/register/user, /auth/register/company
+5. Qt consume FastAPI (en lugar de MySQL directo)
+6. FastAPI actualiza last_login en VPS al hacer login
+
+Prioridad MEDIA:
+7. Completar EmpresaWindow (gestión de vacantes)
+8. Completar UserWindow (perfil, CVs, postulaciones)
+9. Panel Admin
+10. Integración IA evaluación de CV
 
 ==================================================
 4) UI FLOW / NAVIGATION

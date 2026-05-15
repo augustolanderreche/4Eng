@@ -1,5 +1,5 @@
 PENDIENTES DEL PROYECTO FINAL - 4eng-Login
-Fecha: 2026-05-11
+Fecha última actualización: 2026-05-15
 Estado: En progreso
 
 Objetivo de este documento
@@ -7,87 +7,89 @@ Objetivo de este documento
 - Ordenar tareas por prioridad para que el equipo avance sin bloquearse.
 
 ==================================================
-1) PENDIENTES CRITICOS (HACER PRIMERO) COMPLETADO
+1) PENDIENTES CRITICOS (HACER PRIMERO)
 ==================================================
 
-1.1 Seguridad de contrasenas (OBLIGATORIO)
+1.1 Fix driver QMYSQL en Windows ← NUEVO, BLOQUEANTE
 Estado actual:
-- En la tabla users, las contrasenas estan en texto plano (campo password).
-
-Riesgo:
-- Si se filtra la base, se exponen contrasenas reales.
+- QMYSQL driver no se carga en la máquina de desarrollo Windows.
+- App inicia bien pero login contra VPS no funciona.
+- SQLite local funciona correctamente.
 
 Que falta hacer:
-- Implementar hash de contrasena en backend (Argon2id recomendado, bcrypt como alternativa).
-- Guardar solo hash en password_hash.
-- Dejar de usar password para login.
-- Migrar cuentas de prueba a hash.
-- Luego eliminar o inutilizar columna password.
-- [FASTAPI] Configurar passlib con bcrypt o Argon2 en FastAPI (ver fase_2_fastapi_explicacion.txt sección "Solución PRACTICA: Hibrida")
-- [FASTAPI] Implementar dual-check para migración gradual: SHA2 (Qt) -> bcrypt/Argon2 (FastAPI)
+- Copiar qsqlmysql.dll al directorio de sqldrivers del build.
+- Copiar libmysql.dll al directorio del ejecutable.
+- Libmysql.dll viene del MySQL Connector/C o instalación de MariaDB.
 
-Resultado esperado:
-- En la base no se ve ninguna contrasena legible.
+Ruta típica en Qt:
+- C:\Qt\6.11.0\mingw_64\plugins\sqldrivers\qsqlmysql.dll
 
 --------------------------------------------------
-1.2 Cerrar exposicion de phpMyAdmin por defecto
+1.2 Seguridad de contraseñas (PENDIENTE en Qt directo)
 Estado actual:
-- phpMyAdmin fue accesible desde internet y despues se deshabilito (404), lo cual es correcto para reposo.
+- VPS tiene columna password_hash lista (NULL por ahora).
+- Qt sigue usando password en texto plano para login.
+- FastAPI (cuando se implemente) usará password_hash con bcrypt.
 
 Que falta hacer:
-- Definir politica oficial:
-  - Por defecto: desactivado.
-  - Solo mantenimiento: activarlo temporalmente.
-- Cuando este activo: proteger con HTTPS + autenticacion extra (basic auth) y/o restriccion por IP.
-
-Resultado esperado:
-- Exposicion minima de superficie de ataque.
+- [FASTAPI] Implementar hash con bcrypt/Argon2id en FastAPI.
+- [FASTAPI] Dual-check: intentar password_hash primero, si NULL usar password.
+- Qt puede seguir usando password hasta que FastAPI tome el control del login.
 
 --------------------------------------------------
-1.3 Login/registro no deben depender de conexion directa Qt -> MySQL
-Estado actual:
-- Qt consulta DB directa para login y registro.
+1.3 phpMyAdmin - política definida
+Estado actual: Desactivado (404). Correcto para producción.
+Que falta: Documentar proceso oficial de activación temporal para mantenimiento.
 
-Riesgo:
-- Credenciales de DB en cliente.
-- Logica de seguridad distribuida y dificil de controlar.
-
-Que falta hacer:
-- Mover login y registro a FastAPI.
-- Qt debe llamar endpoints HTTP del backend.
-- Backend valida, hashea, audita y responde token/sesion.
-
-Resultado esperado:
-- Arquitectura cliente-servidor segura y mantenible.
+--------------------------------------------------
+1.4 Login/registro directo Qt -> MySQL
+Estado actual: Qt consulta DB directo (riesgo de credenciales en cliente).
+Plan a futuro: Mover a FastAPI endpoints.
+Estado: Aceptable hasta Fase 2, no bloquea consigna actual.
 
 ==================================================
 2) PENDIENTES ALTOS (SIGUIENTE BLOQUE)
 ==================================================
 
-2.1 Configurar FastAPI base de autenticacion
+2.1 Sincronización real de offline_cache ← NUEVO
+Estado actual:
+- syncOfflineCache() es un placeholder (solo log de debug).
+- La función se llama cada 5 minutos y al cerrar app.
+
+Que falta implementar:
+- SELECT de job_posts, cv_documents, applications del VPS.
+- Serializar a JSON y guardar en SQLite offline_cache.
+- Comparar timestamps para no re-descargar innecesariamente.
+- Leer del caché si no hay conexión.
+
+--------------------------------------------------
+2.2 UI "Últimas conexiones"
+Estado actual: login_attempts se guarda, pero no se muestra en UI.
+
+Que falta:
+- En MainWindow (o post-login), mostrar "Última conexión: DD/MM HH:MM"
+- Opcional: botón "Ver historial" con últimas 5 conexiones.
+
+--------------------------------------------------
+2.3 Configurar FastAPI base de autenticación
 Que falta hacer:
-- Endpoints minimos:
+- Endpoints mínimos:
   - POST /auth/register-user
   - POST /auth/register-company
-  - POST /auth/login
-- Validaciones:
-  - username y email unicos
-  - role permitido (Usuario, Empresa, Admin)
-  - reglas de datos requeridos por tipo
-- Integracion con tabla users + perfiles.
+  - POST /auth/login (actualiza last_login en VPS)
+- Validaciones: username/email únicos, role permitido.
+- FastAPI usa password_hash (bcrypt).
 
-2.2 Configurar Nginx delante de FastAPI
-Que falta hacer:
+--------------------------------------------------
+2.4 Configurar Nginx delante de FastAPI
 - Reverse proxy a FastAPI.
 - TLS (Let's Encrypt) en dominio.
-- Redireccion HTTP -> HTTPS.
-- Reglas basicas de hardening.
+- Redirección HTTP -> HTTPS.
 
-2.3 Verificar conexion real Qt con backend
-Que falta hacer:
-- Reemplazar consultas SQL en Qt por llamadas a API.
-- Manejo de errores de red, timeout y reintentos.
-- Mensajes de estado claros al usuario.
+--------------------------------------------------
+2.5 Qt consume FastAPI (en lugar de MySQL directo)
+- Reemplazar QSqlQuery de login/registro por QNetworkRequest a la API.
+- Manejo de errores de red, timeout, reintentos.
 
 ==================================================
 3) PENDIENTES MEDIOS (FUNCIONALIDAD DE NEGOCIO)
@@ -98,77 +100,106 @@ Que falta hacer:
 - Ingeniero:
   - Subida de CV
   - Historial de postulaciones
-  - Recomendaciones de capacitacion
+  - Recomendaciones de capacitación
 - Empresa:
   - Crear/editar/cerrar vacantes
   - Ver postulaciones por vacante
   - Ver candidatos seleccionados y motivo IA
 
-3.2 Integracion IA de evaluacion de CV
-Que falta hacer:
+3.2 Integración IA de evaluación de CV
 - Definir servicio IA en backend.
 - Guardar resultado en ai_evaluations.
 - Guardar brechas en training_recommendations.
-- Definir criterio de seleccion transparente.
 
 3.3 Panel Admin
-Que falta hacer:
 - Interfaz para Admin.
-- Ver actividad sensible.
-- Gestion basica de usuarios y estados.
-- Registrar acciones en admin_audit_logs.
+- Ver actividad sensible, gestión de usuarios.
+- Registrar acciones en admin_audit_logs del VPS.
 
 ==================================================
 4) PENDIENTES DE INFRAESTRUCTURA Y DEVOPS
 ==================================================
 
 4.1 Docker Compose estable para entorno backend
-Que falta hacer:
-- Definir compose para api + db (y opcional redis).
-- Variables de entorno fuera del codigo (.env).
-- Volumen persistente de MySQL.
-
-4.2 Backups y recuperacion
-Que falta hacer:
-- Backup automatico diario (mysqldump o fisico).
-- Politica de retencion.
-- Prueba de restore.
-
-4.3 Firewall y puertos
-Que falta hacer:
-- Mantener 3306 cerrado externamente salvo necesidad puntual.
-- Exponer solo 80/443 para web.
-- Revisar reglas en UFW y proveedor VPS.
+4.2 Backups automáticos + prueba de restore
+4.3 Firewall: 3306 cerrado externamente, solo 80/443
 
 ==================================================
 5) PENDIENTES DE CALIDAD Y PRUEBAS
 ==================================================
 
-5.1 Pruebas backend
-Que falta hacer:
-- Unit tests de auth y validaciones.
-- Integration tests con DB real de prueba.
+5.1 Pruebas de bloqueo por intentos fallidos (local SQLite)
+   - Verificar que 5 intentos bloquean por 15 minutos
+   - Verificar que login exitoso resetea el contador
 
-5.2 Pruebas de seguridad
-Que falta hacer:
-- Intentos de login invalidos (rate limit futuro).
-- Verificar que no se devuelvan datos sensibles.
-- Revisar inyecciones y validacion de inputs.
+5.2 Pruebas de auto-login
+   - Verificar que al cerrar y abrir app recupera sesión
 
-5.3 Pruebas end-to-end
-Que falta hacer:
-- Registro -> Login -> flujo segun rol.
-- Escenarios de error de red/backend.
+5.3 Pruebas de offline_cache (cuando se implemente sincronización real)
+
+5.4 Pruebas backend (FastAPI)
+   - Unit tests de auth y validaciones.
+   - Integration tests con DB real de prueba.
+
+5.5 Pruebas end-to-end
+   - Registro -> Login -> flujo según rol.
+   - Escenarios de error de red/backend.
 
 ==================================================
 6) PENDIENTES DE DATOS Y PRIVACIDAD
 ==================================================
 
-6.1 Datos sensibles y minimizacion
-Que falta hacer:
+6.1 Datos sensibles y minimización
 - No mostrar password/password_hash en respuestas API.
-- Enmascarar datos en vistas administrativas cuando aplique.
-- Definir politica de retencion para CV y datos personales.
+- Enmascarar datos en vistas administrativas.
+
+6.2 Migración de datos de prueba
+- Cambiar credenciales de prueba por seguras o eliminarlas en producción.
+
+6.3 Cifrado offline_cache (futuro)
+- Encriptar SQLite local con contraseña del usuario.
+- Protección si el PC es robado.
+
+==================================================
+7) CHECKLIST RESUMIDO (ESTADO AL 2026-05-15)
+==================================================
+
+[✅ HECHO] Migración VPS aplicada (last_login + 13 índices)
+[✅ HECHO] SQLite local implementado (sessions, login_attempts, failed_attempts,
+           offline_cache, user_preferences, audit_log, sync_metadata)
+[✅ HECHO] Bloqueo por intentos fallidos (5 intentos → 15 min)
+[✅ HECHO] Auto-login con sesión persistente
+[✅ HECHO] Sincronización al cerrar app (closeEvent)
+[✅ HECHO] Background sync timer (cada 5 min, placeholder)
+[  ] Fix QMYSQL driver en Windows ← SIGUIENTE PASO
+[  ] Sincronización real de offline_cache
+[  ] UI "Últimas conexiones"
+[  ] FastAPI con endpoints de login/registro
+[  ] Qt usando API (sin SQL directo para auth)
+[  ] Nginx + HTTPS activos
+[  ] Flujo Empresa/Ingeniero completo
+[  ] IA integrada con persistencia de resultados
+[  ] Panel Admin funcional con auditoría
+[  ] Backups automáticos + restore probado
+[  ] Pruebas unitarias, integración y e2e mínimas
+
+==================================================
+8) RECOMENDACIÓN DE ORDEN DE IMPLEMENTACIÓN
+==================================================
+
+Fase actual (completar consigna):
+1. Fix QMYSQL driver → login contra VPS funciona
+2. Sincronización real de offline_cache
+3. UI "Últimas conexiones" (usa datos ya guardados en SQLite)
+
+Fase 2 (backend):
+4. FastAPI auth mínima
+5. Qt -> API para login/registro
+6. Nginx + HTTPS
+
+==================================================
+FIN
+==================================================
 
 6.2 Migracion de datos de prueba
 Que falta hacer:

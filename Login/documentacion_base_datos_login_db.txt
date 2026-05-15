@@ -1,5 +1,5 @@
 DOCUMENTACION TECNICA - BASE DE DATOS login_db
-Fecha: 2026-05-11
+Fecha última actualización: 2026-05-15
 Proyecto: 4eng-Login (preparado para evolucion a backend FastAPI + Nginx)
 
 ==================================================
@@ -49,10 +49,13 @@ A) users
   - role: Usuario | Empresa | Admin
   - username (UNIQUE)
   - email (UNIQUE)
-  - password (actual en texto plano, temporal)
-  - password_hash (preparado para migrar a hash)
+  - password (texto plano, Qt lo usa actualmente)
+  - password_hash (NULL por ahora, FastAPI lo usará con bcrypt)
   - is_active
   - created_at, updated_at
+  - last_login (DATETIME NULL) ← NUEVO 2026-05-15, FastAPI lo actualizará al hacer login
+- Índices activos (agregados 2026-05-15):
+  - idx_users_username, idx_users_email, idx_users_role
 - Por que existe:
   - Punto unico de identidad de cuenta para el sistema.
 
@@ -79,6 +82,8 @@ E) job_posts
 - Proposito: vacantes creadas por empresas.
 - Relacion: company_user_id -> users.id (1 a N)
 - Campos utiles: required_skills(JSON), status, location_mode
+- Índices activos (agregados 2026-05-15):
+  - idx_job_posts_company, idx_job_posts_status
 - Por que existe:
   - Modelo principal de demanda laboral.
 
@@ -90,6 +95,8 @@ F) applications
   - cv_document_id -> cv_documents.id (nullable)
 - Restriccion importante:
   - UNIQUE(job_post_id, engineer_user_id) evita postulacion duplicada.
+- Índices activos (agregados 2026-05-15):
+  - idx_applications_engineer, idx_applications_job, idx_applications_company, idx_applications_status
 - Por que existe:
   - Vincular candidato + vacante + estado de proceso.
 
@@ -161,7 +168,9 @@ Estos datos son de prueba y NO son seguros para produccion.
 6) CONEXIONES Y ACCESO
 ==================================================
 Acceso actual de administracion:
-- phpMyAdmin via navegador: http://IP_DEL_VPS/phpmyadmin/
+- phpMyAdmin: DESACTIVADO por seguridad (devuelve 404).
+  Solo activar temporalmente para mantenimiento.
+  Cuando esté activo: proteger con HTTPS + basic auth.
 
 Acceso previsto para backend:
 - Usuario recomendado: backend_app@localhost
@@ -250,20 +259,39 @@ El enmascarado en SQL ayuda para vistas admin; la proteccion real de contrasena 
 ==================================================
 10) RECOMENDACIONES DE EVOLUCION (CORTO PLAZO)
 ==================================================
-1. Migrar login a password_hash en backend.
-2. Marcar users.password como deprecado.
-3. Crear vistas seguras para paneles de administracion.
-4. Agregar indice en users(role) si crece volumen.
-5. Definir politicas de borrado/anomizacion de CV.
+[✅ HECHO 2026-05-15] Agregar índices en todas las tablas clave (13 índices).
+[✅ HECHO 2026-05-15] Agregar columna last_login en users.
+[  ] Migrar login a password_hash en backend (FastAPI con bcrypt/Argon2).
+[  ] Marcar users.password como deprecado (cuando FastAPI controle el login).
+[  ] Crear vistas seguras para paneles de administracion.
+[  ] Definir politicas de borrado/anonimizacion de CV.
 
 ==================================================
 11) CHECKLIST DE ENTREGA AL EQUIPO
 ==================================================
-- DB creada: login_db
-- Tablas creadas: OK
-- Datos de prueba: OK
-- Export SQL: login_db_entrega.sql
-- Credenciales backend: backend_app@localhost
-- Documento tecnico: este archivo
+- DB creada: login_db ✅
+- Tablas creadas (9): OK ✅
+- Datos de prueba (3 cuentas): OK ✅
+- Export SQL: login_db_entrega.sql ✅
+- Credenciales backend: backend_app@localhost ✅
+- Migración Fase 2 aplicada (2026-05-15): OK ✅
+  - Columna last_login en users
+  - 13 índices de performance
+- SQLite local en Qt implementado (2026-05-15): OK ✅
+  - Ver localdbconfig.h y SQLITE_LOCAL_DB_STRUCTURE.txt
+- Documento tecnico: este archivo ✅
+
+==================================================
+12) BD LOCAL SQLITE (Qt) - COMPLEMENTARIA AL VPS
+==================================================
+Además del VPS, la app Qt maneja una BD local SQLite en:
+%APPDATA%/4eng-Login/local.db
+
+Propósito: gestión de sesiones, bloqueos y caché offline.
+Tablas: sessions, login_attempts, failed_attempts, offline_cache,
+        user_preferences, audit_log, sync_metadata
+
+Ver SQLITE_LOCAL_DB_STRUCTURE.txt para detalle completo.
+Ver localdbconfig.h para implementación.
 
 FIN

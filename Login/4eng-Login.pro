@@ -13,6 +13,7 @@ SOURCES += \
 
 HEADERS += \
     databaseconfig.h \
+    localdbconfig.h \
     empresawindow.h \
     mainwindow.h \
     registerwindow.h \
