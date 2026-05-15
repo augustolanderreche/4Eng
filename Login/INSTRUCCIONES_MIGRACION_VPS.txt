@@ -1,0 +1,174 @@
+INSTRUCCIONES PARA APLICAR MIGRACIÓN EN VPS - FASE 2 INICIAL
+Fecha: 2026-05-15
+Proyecto: 4eng-Login
+
+==================================================
+RESUMEN DE LO QUE SE VA A HACER
+==================================================
+1. Agregar columna last_login en tabla users
+   - Propósito: Auditoría de último acceso
+   - Sin impacto: Es NULL hasta que FastAPI la use
+   
+2. Crear índices para optimizar queries de Fase 2
+   - Afecta a: users, applications, job_posts, cv_documents, ai_evaluations, engineer_profiles, company_profiles
+   - Impacto: Mejor performance en búsquedas, más espacio en disco (~10-20 MB)
+
+3. NO eliminar columna password de users
+   - Motivo: Qt actual sigue usándola, necesaria para compatibilidad
+
+DURACIÓN: ~2 minutos
+
+==================================================
+PASO 1: ACCEDER AL VPS POR SSH
+==================================================
+
+Desde PowerShell en tu PC:
+ssh TU_USUARIO@TU_IP_VPS
+
+Ejemplo:
+ssh root@143.198.100.123
+
+Una vez dentro, verifica que MariaDB esté corriendo:
+sudo systemctl status mariadb --no-pager
+
+Salida esperada: "active (running)"
+
+==================================================
+PASO 2: APLICAR EL SCRIPT SQL
+==================================================
+
+OPCIÓN A: COPIAR Y PEGAR DIRECTO EN MYSQL (MÁS RÁPIDO)
+────────────────────────────────────────────────
+
+Entra a la consola MySQL:
+sudo mysql -u root -p
+
+Te pedirá password (la que configuraste en mysql_secure_installation)
+
+En el prompt "mysql>", copia y pega TODO este SQL de una vez:
+
+------- INICIO SQL -------
+USE login_db;
+
+ALTER TABLE users 
+ADD COLUMN last_login DATETIME NULL COMMENT 'Fecha y hora del último login exitoso' AFTER updated_at;
+
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+
+CREATE INDEX idx_applications_engineer ON applications(engineer_user_id);
+CREATE INDEX idx_applications_job ON applications(job_post_id);
+CREATE INDEX idx_applications_company ON applications(company_user_id);
+CREATE INDEX idx_applications_status ON applications(status);
+
+CREATE INDEX idx_job_posts_company ON job_posts(company_user_id);
+CREATE INDEX idx_job_posts_status ON job_posts(status);
+
+CREATE INDEX idx_cv_documents_engineer ON cv_documents(engineer_user_id);
+
+CREATE INDEX idx_ai_evaluations_application ON ai_evaluations(application_id);
+
+CREATE INDEX idx_engineer_profiles_user ON engineer_profiles(user_id);
+CREATE INDEX idx_company_profiles_user ON company_profiles(user_id);
+
+------- FIN SQL -------
+
+OPCIÓN B: USAR UN ARCHIVO (RECOMENDADO PARA AUTOMATIZACIÓN)
+────────────────────────────────────────────────────
+
+En tu PC, copia el archivo migration_phase2_initial.sql al VPS:
+scp migration_phase2_initial.sql TU_USUARIO@TU_IP_VPS:/tmp/
+
+En el VPS, aplica el script:
+sudo mysql -u root -p login_db < /tmp/migration_phase2_initial.sql
+
+Te pedirá password una sola vez.
+
+==================================================
+PASO 3: VERIFICAR QUE TODO FUNCIONÓ
+==================================================
+
+Entra a MySQL de nuevo:
+sudo mysql -u root -p
+
+Selecciona la base:
+USE login_db;
+
+Verifica que last_login existe:
+DESCRIBE users;
+
+Deberías ver una fila al final con:
+| last_login | DATETIME | YES | NULL |
+
+Verifica que los índices se crearon:
+SHOW INDEX FROM users;
+SHOW INDEX FROM applications;
+SHOW INDEX FROM job_posts;
+
+Salida esperada: Muchas líneas con nombres como idx_users_username, idx_applications_engineer, etc.
+
+Si todo está OK, escribe:
+exit
+
+==================================================
+PASO 4: VALIDAR QUE QT SIGUE FUNCIONANDO (OPCIONAL)
+==================================================
+
+En tu PC con Qt compilado, prueba login/registro normalmente.
+
+La app NO debería notar cambios (los índices son transparentes).
+
+Si login falla:
+- Verifica que MySQL está corriendo: systemctl status mariadb
+- Verifica que la conexión sigue siendo la misma (host, puerto, usuario, pass)
+
+==================================================
+CHECKLIST FINAL
+==================================================
+
+✅ Accedí al VPS por SSH
+✅ Verifiqué que MariaDB está running
+✅ Ejecuté el script SQL (sin errores)
+✅ Verifiqué que last_login existe en users
+✅ Verifiqué que los índices se crearon
+✅ Qt sigue haciendo login/registro normalmente
+
+==================================================
+¿QUE PASA AHORA?
+==================================================
+
+Estado actual después de esta migración:
+- Qt: Sin cambios, sigue usando password en texto plano
+- FastAPI: Listo para usar password_hash cuando se implemente
+- Performance: Mejorada para Fase 2 con los índices
+- Auditoria: Preparada con columna last_login
+
+Próximos pasos:
+1. Implementar FastAPI con endpoints /auth/login, /auth/register/user, /auth/register/company
+2. FastAPI debe actualizar last_login al hacer login exitoso
+3. FastAPI debe usar password_hash (bcrypt/Argon2) para nuevas cuentas
+4. Mantener compatibilidad con Qt usando password (migración gradual)
+
+==================================================
+TROUBLESHOOTING
+==================================================
+
+Problema: "ERROR 1054 (42S22): Unknown column 'last_login'"
+Solución: La columna ya existía. Ejecuta DESCRIBE users; para verificar.
+
+Problema: "ERROR 1061 (42S01): Duplicate key name"
+Solución: El índice ya existía. No hay problema, es idempotente.
+
+Problema: MySQL pide password y no la aceptas
+Solución: Presiona Ctrl+C, espera, y vuelve a intentar.
+          Verifica que escribiste bien la contraseña de root.
+
+Problema: No puedo conectarme al VPS
+Solución: Verifica que tienes SSH habilitado:
+          ssh -v TU_USUARIO@TU_IP_VPS
+          (el -v muestra detalles del error)
+
+==================================================
+FIN
+==================================================

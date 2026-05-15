@@ -1,0 +1,205 @@
+ESTADO FINAL DE SCHEMA - DESPUÉS DE MIGRACIÓN FASE 2 INICIAL
+Fecha: 2026-05-15
+Proyecto: 4eng-Login
+
+==================================================
+RESUMEN EJECUTIVO
+==================================================
+Después de aplicar migration_phase2_initial.sql:
+
+✅ Base de datos: login_db (sin cambios, mismas 9 tablas)
+✅ Columnas en users: +1 nueva (last_login)
+✅ Índices creados: 13 índices nuevos para optimización
+✅ Qt: Sigue funcionando exactamente igual
+✅ FastAPI: Listo para usar password_hash e índices
+
+Total cambios en disco: ~20 MB de índices
+
+==================================================
+TABLA users - DESPUÉS DE MIGRACIÓN
+==================================================
+Campos (en orden):
+- id BIGINT UNSIGNED (PK, auto-increment)
+- role ENUM('Usuario','Empresa','Admin')
+- username VARCHAR(50) UNIQUE
+- password VARCHAR(255) ← Qt usa esta (texto plano, deprecada)
+- email VARCHAR(120) UNIQUE
+- display_name VARCHAR(120)
+- programming_language VARCHAR(50) NULL
+- age INT NULL
+- password_hash VARCHAR(255) NULL ← FastAPI usará esta (bcrypt/Argon2)
+- is_active TINYINT(1) DEFAULT 1
+- created_at TIMESTAMP
+- updated_at TIMESTAMP
+- last_login DATETIME NULL ← NUEVA (auditoria)
+
+ÍNDICES en users:
+- PRIMARY KEY (id)
+- UNIQUE (username)
+- UNIQUE (email)
+- INDEX idx_users_username
+- INDEX idx_users_email
+- INDEX idx_users_role
+
+==================================================
+TABLA applications - DESPUÉS DE MIGRACIÓN
+==================================================
+(sin cambios en estructura, solo se agregan índices)
+
+ÍNDICES nuevos:
+- INDEX idx_applications_engineer (engineer_user_id)
+- INDEX idx_applications_job (job_post_id)
+- INDEX idx_applications_company (company_user_id)
+- INDEX idx_applications_status (status)
+
+Caso de uso: Cuando FastAPI busque "todas las aplicaciones de un ingeniero"
+o "todas las aplicaciones a una vacante", estos índices aceleran la query.
+
+==================================================
+TABLA job_posts - DESPUÉS DE MIGRACIÓN
+==================================================
+(sin cambios en estructura)
+
+ÍNDICES nuevos:
+- INDEX idx_job_posts_company (company_user_id)
+- INDEX idx_job_posts_status (status)
+
+Caso de uso: Listar todas las vacantes de una empresa (fast).
+
+==================================================
+TABLAS CON ÍNDICES NUEVOS (breve mención)
+==================================================
+cv_documents:
+  + idx_cv_documents_engineer (engineer_user_id)
+  
+ai_evaluations:
+  + idx_ai_evaluations_application (application_id)
+  
+engineer_profiles:
+  + idx_engineer_profiles_user (user_id)
+  
+company_profiles:
+  + idx_company_profiles_user (user_id)
+
+==================================================
+IMPACTO EN Qt (DESKTOP)
+==================================================
+✅ Qt NO se ve afectado:
+  - Sigue usando password (no password_hash)
+  - Sigue consultando users por username/password
+  - Los índices son transparentes (aceleran queries, punto)
+  - is_active NO se valida en login aún (entra aunque sea inactivo)
+
+Cuando alguien hace login en Qt:
+1. Qt prepara: SELECT COUNT(*) FROM users WHERE username=? AND password=?
+2. BD usa índice idx_users_username para encontrar usuario rápido
+3. BD verifica password (antes lo hacía sin índice, más lento)
+4. Qt abre session y muestra EmpresaWindow o UserWindow
+
+==================================================
+IMPACTO EN FastAPI (BACKEND) - FUTURE
+==================================================
+Cuando FastAPI implemente /auth/login:
+
+1. Recibe username y password en POST
+2. Consulta: SELECT * FROM users WHERE username=:username
+   - BD usa idx_users_username para buscar rápido
+3. Verifica: bcrypt.verify(password_ingresada, users.password_hash)
+4. Si OK:
+   - UPDATE users SET last_login=NOW() WHERE id=:user_id
+   - Devuelve JWT token o sesión web
+5. Usuario accede a web (FastAPI sirve frontend)
+
+ÍNDICES que FastAPI necesitará:
+✅ idx_users_username: búsqueda por usuario
+✅ idx_users_email: para registro (verificar email único)
+✅ idx_applications_engineer: "mis aplicaciones"
+✅ idx_applications_job: "quién aplicó a esta vacante"
+✅ idx_job_posts_company: "mis vacantes"
+✅ idx_job_posts_status: filtrar por estado
+
+==================================================
+MIGRACIÓN GRADUAL password → password_hash
+==================================================
+Fase actual (hasta que FastAPI haga registro):
+✅ Tabla users.password: usado por Qt (texto plano)
+✅ Tabla users.password_hash: NULL para todos (FastAPI lo llenará después)
+
+Fase 1.5 (cuando FastAPI pueda registrar):
+✅ Nuevos usuarios: guardan en password_hash (bcrypt)
+✅ Usuarios viejos: mantienen password (funciona en Qt)
+✅ FastAPI login: intenta password_hash primero, si es NULL intenta password
+
+Fase 2 (cuando todos migren):
+✅ password_hash: usado por FastAPI (bcrypt/Argon2)
+✅ password: puede eliminarse (o dejarse para legacy)
+
+==================================================
+EJEMPLO DE QUERY CON ÍNDICES
+==================================================
+Antes (sin índices):
+SELECT * FROM users WHERE username='user';
+↓ Tiempo: ~50ms (full table scan si hay 1M usuarios)
+
+Después (con índice):
+SELECT * FROM users WHERE username='user';
+↓ Tiempo: ~0.5ms (búsqueda indexada, 100x más rápido)
+
+Con 10M usuarios, la diferencia es aún mayor.
+
+==================================================
+DATOS DE PRUEBA - SIN CAMBIOS
+==================================================
+Las 3 cuentas de prueba creadas antes siguen igual:
+
+1. 
+   username: empresa
+   password: empresa123 (en texto plano, en users.password)
+   password_hash: NULL (lo llenará FastAPI cuando se re-registre)
+   role: Empresa
+
+2. 
+   username: user
+   password: user123
+   password_hash: NULL
+   role: Usuario
+
+3. 
+   username: admin
+   password: admin123
+   password_hash: NULL
+   role: Admin
+
+Todas tienen last_login=NULL hasta que FastAPI las use.
+
+==================================================
+CHECKLIST DE VALIDACIÓN
+==================================================
+Después de aplicar la migración, verifica:
+
+✅ last_login existe en users (NULL inicialmente)
+✅ 6 índices nuevos en users existen
+✅ 4 índices nuevos en applications existen
+✅ 2 índices nuevos en job_posts existen
+✅ 1 índice nuevo en cv_documents existe
+✅ 1 índice nuevo en ai_evaluations existe
+✅ 1 índice nuevo en engineer_profiles existe
+✅ 1 índice nuevo en company_profiles existe
+✅ Qt sigue haciendo login sin cambios
+✅ Datos de prueba siguen intactos
+
+==================================================
+PRÓXIMOS PASOS
+==================================================
+1. ✅ AHORA: Aplicar migration_phase2_initial.sql en VPS
+2. DESPUÉS: Implementar FastAPI endpoints
+   - POST /auth/login (valida, actualiza last_login, devuelve token)
+   - POST /auth/register/user (crea usuario, hashea password en password_hash)
+   - POST /auth/register/company (crea empresa, hashea password en password_hash)
+   - GET /auth/me (obtiene usuario actual)
+3. DESPUÉS: Conectar Qt a FastAPI (en lugar de MySQL directo)
+4. DESPUÉS: Migrar datos viejos (llenar password_hash de cuentas existentes)
+
+==================================================
+FIN
+==================================================
