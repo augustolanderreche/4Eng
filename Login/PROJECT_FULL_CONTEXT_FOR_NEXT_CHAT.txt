@@ -12,9 +12,9 @@ PRIMARY CONTEXT FILE:
 1) QUICK SUMMARY
 ==================================================
 This is a desktop login/registration app built with Qt Widgets.
-It connects directly to MySQL/MariaDB (VPS) using Qt SQL driver QMYSQL
-AND uses a local SQLite database for session management, offline cache,
-and bruteforce protection.
+Fase 1 actual conecta directo a MySQL/MariaDB (VPS) usando QMYSQL.
+Fase 2 objetivo: Qt deja conexión directa y consume FastAPI vía Nginx (reverse proxy).
+También usa SQLite local para session management, offline cache y bruteforce protection.
 
 Users can:
 - Log in with username/password.
@@ -23,8 +23,8 @@ Users can:
   - role == "Empresa" -> EmpresaWindow
   - any other role -> UserWindow
 
-Database credentials are centralized and read from environment variables
-through databaseconfig.h.
+En Fase 1 las credenciales están en variables de entorno vía databaseconfig.h.
+En Fase 2 las credenciales de DB quedan solo del lado backend (FastAPI), no en Qt.
 
 LOCAL SQLITE (NEW - 2026-05-15):
 - Managed via localdbconfig.h
@@ -239,13 +239,13 @@ Sin este fix: Login contra VPS no funciona, SQLite local sí funciona.
 8) PRÓXIMOS PASOS RECOMENDADOS
 ==================================================
 Prioridad INMEDIATA:
-1. ✅ Fix QMYSQL driver (ver sección 7) → para que login VPS funcione
+1. ✅ Fix QMYSQL driver (solo si se mantiene Fase 1 temporal)
 2. Implementar sincronización real de offline_cache en syncOfflineCache()
 3. UI "Últimas conexiones": mostrar historial de login_attempts en la pantalla de login
 
 Prioridad ALTA:
 4. FastAPI endpoints: /auth/login, /auth/register/user, /auth/register/company
-5. Qt consume FastAPI (en lugar de MySQL directo)
+5. Qt consume FastAPI SIEMPRE vía Nginx (en lugar de MySQL directo)
 6. FastAPI actualiza last_login en VPS al hacer login
 
 Prioridad MEDIA:

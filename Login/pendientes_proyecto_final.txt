@@ -44,7 +44,7 @@ Que falta: Documentar proceso oficial de activación temporal para mantenimiento
 --------------------------------------------------
 1.4 Login/registro directo Qt -> MySQL
 Estado actual: Qt consulta DB directo (riesgo de credenciales en cliente).
-Plan a futuro: Mover a FastAPI endpoints.
+Plan a futuro: Qt hará requests a Nginx y Nginx enruta a FastAPI (sin acceso directo a DB).
 Estado: Aceptable hasta Fase 2, no bloquea consigna actual.
 
 ==================================================
@@ -73,7 +73,7 @@ Que falta:
 --------------------------------------------------
 2.3 Configurar FastAPI base de autenticación
 Que falta hacer:
-- Endpoints mínimos:
+- Endpoints mínimos (publicados detrás de Nginx):
   - POST /auth/register-user
   - POST /auth/register-company
   - POST /auth/login (actualiza last_login en VPS)
@@ -85,11 +85,14 @@ Que falta hacer:
 - Reverse proxy a FastAPI.
 - TLS (Let's Encrypt) en dominio.
 - Redirección HTTP -> HTTPS.
+- Enrutamiento por path/endpoint hacia puertos internos.
+- Exponer solo 80/443 públicamente.
 
 --------------------------------------------------
 2.5 Qt consume FastAPI (en lugar de MySQL directo)
 - Reemplazar QSqlQuery de login/registro por QNetworkRequest a la API.
 - Manejo de errores de red, timeout, reintentos.
+- Base URL de Qt apunta a Nginx, no a puertos internos de FastAPI.
 
 ==================================================
 3) PENDIENTES MEDIOS (FUNCIONALIDAD DE NEGOCIO)
@@ -200,24 +203,6 @@ Fase 2 (backend):
 ==================================================
 FIN
 ==================================================
-
-6.2 Migracion de datos de prueba
-Que falta hacer:
-- Cambiar credenciales de prueba por seguras o eliminarlas.
-- Marcar entorno de desarrollo vs produccion.
-
-==================================================
-7) CHECKLIST RESUMIDO (PARA SEGUIR)
-==================================================
-
-[ completado ] Hash de contrasenas implementado y columna password deprecada
-[ ] FastAPI con endpoints de login/registro funcionando
-[ ] Qt usando API (sin SQL directo para auth)
-[ ] Nginx + HTTPS activos
-[ ] phpMyAdmin desactivado por defecto y protegido al activarlo
-[ ] Flujo Empresa/Ingeniero completo
-[ ] IA integrada con persistencia de resultados
-[ ] Panel Admin funcional con auditoria
 [ ] Backups automaticos + restore probado
 [ ] Pruebas unitarias, integracion y e2e minimas aprobadas
 

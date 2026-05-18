@@ -11,10 +11,15 @@ Define:
 2. Qué validaciones implementar
 3. Qué usar de la BD (índices, campos)
 4. Cómo manejar la migración password → password_hash
+5. Cómo enrutar tráfico: Qt siempre entra por Nginx y Nginx enruta al puerto interno de FastAPI
 
 ==================================================
 1) ENDPOINTS INICIALES DE FastAPI
 ==================================================
+Regla de red para TODOS los endpoints:
+- Qt llama al host público de Nginx (HTTPS)
+- Nginx enruta por path al servicio FastAPI (puerto interno)
+- Qt no accede directo a FastAPI ni a MariaDB
 
 A) POST /auth/login
 ───────────────────
@@ -48,7 +53,7 @@ Lógica:
        "display_name": "Nombre Mostrado"
      }
 
-Output: 200 OK
+Output: 200 OK (respuesta devuelta a Qt vía Nginx)
 
 ───────────────────
 

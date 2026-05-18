@@ -151,7 +151,7 @@ FastAPI debe hacerse cargo de:
 
 Objetivo final:
 - Qt deja de hablar directo con MySQL para auth.
-- Qt o frontend web llaman a endpoints HTTP.
+- Qt llama endpoints HTTP pasando por Nginx (reverse proxy), y Nginx enruta al puerto interno de FastAPI.
 - password queda deprecado y password_hash pasa a ser la fuente real.
 
 ==================================================

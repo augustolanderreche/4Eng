@@ -107,8 +107,8 @@ Cuando FastAPI implemente /auth/login:
 3. Verifica: bcrypt.verify(password_ingresada, users.password_hash)
 4. Si OK:
    - UPDATE users SET last_login=NOW() WHERE id=:user_id
-   - Devuelve JWT token o sesión web
-5. Usuario accede a web (FastAPI sirve frontend)
+   - Devuelve JWT token a la app Qt
+5. Qt consume endpoints protegidos enviando Authorization: Bearer <token> (vía Nginx)
 
 ÍNDICES que FastAPI necesitará:
 ✅ idx_users_username: búsqueda por usuario
