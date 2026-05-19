@@ -1,53 +1,48 @@
-CONTEXTO TECNICO PARA OTRO COPILOT - CONEXION DB Y ESTADO REAL DEL PROYECTO
-Fecha: 2026-05-11
+CONTEXTO TECNICO - CONEXION DB Y ESTADO REAL DEL PROYECTO
+Fecha: 2026-05-18
 Proyecto: 4eng-Login
 
 ==================================================
-1) ESTADO REAL ACTUAL
+1) ACTUALIZACION IMPORTANTE (BD NUEVA)
 ==================================================
-- App actual: Qt Widgets (desktop) con login y registro.
-- Conexion actual: Qt se conecta DIRECTO a MariaDB/MySQL.
-- Tabla usada por Qt: solo users.
-- Esquema real de BD: existe una base extendida con 9 tablas, pero Qt NO usa las otras 8 todavia.
-- Seguridad actual: las contrasenas en la app Qt se validan y se guardan en texto plano dentro de users.password.
-- password_hash existe como preparacion para Fase 2, pero Qt actual NO lo usa.
-- Fase 2 prevista: mover autenticacion y registro a FastAPI, guardar hash fuerte en password_hash, y dejar de exponer DB al cliente.
+La base remota activa para el proyecto se manejo en Docker y quedo en:
+- Contenedor MySQL: vps-poo-2026-db-1
+- Base principal: vps-poo
+
+En esta base se creo/normalizo el esquema principal de 9 tablas:
+- users
+- engineer_profiles
+- company_profiles
+- cv_documents
+- job_posts
+- applications
+- ai_evaluations
+- training_recommendations
+- admin_audit_logs
+
+Adicionalmente, el proyecto ya tiene una base local SQLite para sesiones y cache:
+- Archivo: %APPDATA%/4eng-Login/local.db
 
 ==================================================
-2) QUE HACE EL CODIGO QT HOY
+2) QUE HACE QT HOY
 ==================================================
-Login:
-- Consulta users por username + password.
-- Usa users.password en texto plano.
-
-Registro Empresa:
-- Inserta en users:
-  - role='Empresa'
-  - username
-  - password
-  - email
-  - display_name
-
-Registro Usuario:
-- Inserta en users:
-  - role='Usuario'
-  - username
-  - password
-  - email
-  - display_name
-  - programming_language
-  - age
+Estado funcional actual:
+- Login/registro por SQL directo (si QMYSQL esta disponible).
+- Tambien existen cuentas demo hardcodeadas para test visual:
+  - user_demo / user123
+  - empresa_demo / empresa123
+  - admin_demo / admin123
+- UI de Usuario, Empresa y Admin esta avanzada, con varias acciones en modo mock.
 
 Importante:
-- Qt NO crea engineer_profiles.
-- Qt NO crea company_profiles.
-- Qt NO gestiona cv_documents, job_posts, applications, ai_evaluations, training_recommendations ni admin_audit_logs.
-- Eso queda reservado para FastAPI (Fase 2).
+- Muchas acciones visuales aun no persisten en BD real.
+- El flujo final recomendado sigue siendo Qt -> FastAPI -> MySQL.
 
 ==================================================
-3) ESTRUCTURA MINIMA DE users QUE QT NECESITA
+3) ESQUEMA REMOTO RELEVANTE
 ==================================================
-Campos minimos que el Qt actual espera encontrar o usar:
+3.1 users (clave para login actual)
+Campos usados hoy por Qt:
 - id
 - role
 - username
@@ -57,109 +52,108 @@ Campos minimos que el Qt actual espera encontrar o usar:
 - programming_language
 - age
 
-Campos adicionales presentes en la BD real:
+Campos extra ya presentes para evolucion:
 - password_hash
 - is_active
 - created_at
 - updated_at
+- last_login
 
-Esos campos extra no rompen Qt; simplemente hoy no se usan.
+3.2 Tablas de negocio ya disponibles
+- engineer_profiles, company_profiles
+- cv_documents, job_posts, applications
+- ai_evaluations, training_recommendations, admin_audit_logs
 
-==================================================
-4) DATOS DE PRUEBA ESPERADOS
-==================================================
-Ejemplos compatibles con el Qt actual:
-
-INSERT INTO users(role, username, password, email, display_name)
-VALUES('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba');
-
-INSERT INTO users(role, username, password, email, display_name, programming_language, age)
-VALUES('Usuario', 'user', 'user123', 'user@mail.com', 'Usuario Prueba', 'Python', 25);
-
-INSERT INTO users(role, username, password, email, display_name)
-VALUES('Admin', 'admin', 'admin123', 'admin@plataforma.com', 'Administrador');
+Nota:
+- Que existan no implica que toda la UI ya este conectada a ellas.
 
 ==================================================
-5) CONEXION DESDE QT
+4) CONEXION DESDE QT (VARIABLES)
 ==================================================
-El proyecto lee estas variables de entorno:
+Variables leidas por la app:
 - LOGIN_DB_HOST
 - LOGIN_DB_PORT
 - LOGIN_DB_NAME
 - LOGIN_DB_USER
 - LOGIN_DB_PASSWORD
 
-Valores por defecto actuales si no se configuran:
+Valores por defecto en codigo (si no se setean):
 - host=127.0.0.1
 - port=3306
 - db=login_db
 - user=qtuser
 - pass=qtpass
 
-Ejemplo en PowerShell:
+IMPORTANTE:
+- Si el entorno real esta en vps-poo, ajustar LOGIN_DB_NAME=vps-poo.
+- Si se deja login_db por default y esa base no existe, la conexion fallara.
+
+Ejemplo PowerShell:
 $env:LOGIN_DB_HOST = "IP_DEL_VPS"
 $env:LOGIN_DB_PORT = "3306"
-$env:LOGIN_DB_NAME = "login_db"
+$env:LOGIN_DB_NAME = "vps-poo"
 $env:LOGIN_DB_USER = "qtuser"
 $env:LOGIN_DB_PASSWORD = "qtpass"
 
-Si se quiere persistencia en Windows, usar setx.
+==================================================
+5) VERIFICACION RAPIDA EN DOCKER (VPS)
+==================================================
+Para confirmar tablas en la base nueva:
+
+docker exec vps-poo-2026-db-1 mysql -uroot -pvpsroot vps-poo -e "SHOW TABLES;"
+
+Para confirmar estructura de users:
+
+docker exec vps-poo-2026-db-1 mysql -uroot -pvpsroot vps-poo -e "DESCRIBE users;"
 
 ==================================================
-6) CONFIGURACION DEL VPS PARA PRUEBA REMOTA
+6) BASE LOCAL SQLITE (YA IMPLEMENTADA)
 ==================================================
-Si se prueba Qt contra la BD remota:
-1. Verificar MariaDB instalado y funcionando.
-2. Verificar que exista la base login_db.
-3. Verificar que exista el usuario qtuser con permisos sobre login_db.users.
-4. Abrir 3306 SOLO si se acepta el riesgo temporal.
-5. Alternativa preferida: tunel SSH en vez de exponer 3306.
+Archivo local:
+- %APPDATA%/4eng-Login/local.db
 
-Ejemplo de grants minimos para el Qt actual:
-CREATE USER 'qtuser'@'%' IDENTIFIED BY 'qtpass';
-GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'%';
-FLUSH PRIVILEGES;
+Uso principal:
+- sessions
+- login_attempts
+- failed_attempts (bloqueo 5 intentos -> 15 min)
+- offline_cache
+- user_preferences
+- audit_log
+- sync_metadata
 
-Si se usa MariaDB en el mismo VPS para FastAPI mas adelante, lo recomendable es cerrar 3306 al exterior y usar acceso local solamente.
+Nota:
+- Es soporte local de UX/estado.
+- No reemplaza la base remota de negocio.
 
 ==================================================
 7) SEGURIDAD Y LIMITACIONES ACTUALES
 ==================================================
-Riesgos actuales:
-- La app Qt conoce credenciales de BD.
-- La autenticacion ocurre desde el cliente.
-- users.password guarda texto plano.
+Limitaciones actuales:
+- Qt puede conectarse directo a DB (modelo temporal).
+- Parte de auth aun depende de password en texto plano.
+- Hay cuentas demo hardcodeadas activas para QA UI.
 
-Esto es aceptable solo como etapa temporal/prototipo.
-
-No asumir:
-- Que Qt actual ya usa bcrypt, Argon2 o password_hash.
-- Que Qt actual ya trabaja con perfiles extendidos.
-- Que el backend FastAPI ya existe.
+Para release final:
+- Desactivar cuentas demo hardcodeadas.
+- Migrar auth completa a FastAPI.
+- Usar password_hash (bcrypt/argon2) como fuente real.
 
 ==================================================
-8) DIRECCION CORRECTA PARA FASE 2
+8) QUE FALTA PARA CIERRE
 ==================================================
-FastAPI debe hacerse cargo de:
-- login
-- registro
-- hash de contrasena con Argon2id o bcrypt
-- escritura en users.password_hash
-- validaciones de negocio
-- creacion de engineer_profiles o company_profiles
-- auditoria y reglas por rol
-
-Objetivo final:
-- Qt deja de hablar directo con MySQL para auth.
-- Qt llama endpoints HTTP pasando por Nginx (reverse proxy), y Nginx enruta al puerto interno de FastAPI.
-- password queda deprecado y password_hash pasa a ser la fuente real.
+1. Conectar todos los botones y vistas a datos reales.
+2. Persistir acciones de Usuario/Empresa/Admin en BD.
+3. Migrar login/registro a FastAPI.
+4. Endurecer seguridad y remover hardcode de demo.
+5. QA final (funcional + regresion).
 
 ==================================================
-9) RESUMEN RAPIDO
+9) RESUMEN CORTO
 ==================================================
-- Si el otro Copilot analiza el proyecto, debe asumir que HOY Qt solo depende de users.
-- La BD completa ya existe, pero Qt todavia no la consume.
-- La autenticacion actual es texto plano y temporal.
-- La solucion correcta y definitiva de seguridad vive en FastAPI Fase 2.
+- La base nueva remota usada en Docker es vps-poo.
+- El esquema principal de 9 tablas existe.
+- SQLite local ya funciona para sesion/caches.
+- UI esta muy avanzada, pero parte de la logica sigue mock.
+- Falta integrar negocio real y cerrar seguridad para produccion.
 
 FIN

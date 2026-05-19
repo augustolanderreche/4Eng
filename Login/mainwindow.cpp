@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "registerwindow.h"
+#include "adminwindow.h"
 #include "empresawindow.h"
 #include "userwindow.h"
 #include "databaseconfig.h"
@@ -69,7 +70,9 @@ void MainWindow::setupUi()
 
     auto *titleLabel = new QLabel(tr("Iniciar sesión"), loginCard);
     titleLabel->setObjectName("titleLabel");
-    auto *subtitleLabel = new QLabel(tr("Ingresa tus credenciales y accede."), loginCard);
+    auto *subtitleLabel = new QLabel(
+        tr("Ingresa tus credenciales y accede. Demo: user_demo/user123, empresa_demo/empresa123, admin_demo/admin123"),
+        loginCard);
     subtitleLabel->setObjectName("subtitleLabel");
 
     m_loginUserEdit = new QLineEdit(loginCard);
@@ -138,6 +141,27 @@ bool MainWindow::validateCredentials(const QString &username, const QString &pas
     }
 
     m_statusLabel->setText(tr("Credenciales inválidas. Revisa usuario y contraseña."));
+    return false;
+}
+
+bool MainWindow::validateHardcodedDemoLogin(const QString &username, const QString &password,
+                                            QString &role, QString &displayName)
+{
+    if (username == "user_demo" && password == "user123") {
+        role = "Usuario";
+        displayName = "Usuario Demo";
+        return true;
+    }
+    if (username == "empresa_demo" && password == "empresa123") {
+        role = "Empresa";
+        displayName = "Empresa Demo";
+        return true;
+    }
+    if (username == "admin_demo" && password == "admin123") {
+        role = "Admin";
+        displayName = "Admin Demo";
+        return true;
+    }
     return false;
 }
 
@@ -213,6 +237,22 @@ void MainWindow::attemptLogin()
         return;
     }
 
+    // Cuentas demo hardcodeadas para pruebas de interfaz
+    QString demoRole;
+    QString demoDisplayName;
+    if (validateHardcodedDemoLogin(username, password, demoRole, demoDisplayName)) {
+        m_statusLabel->setText(tr("Iniciando sesión demo..."));
+        m_currentUsername = username;
+        if (demoRole == "Empresa") {
+            openEmpresaWindow(demoDisplayName);
+        } else if (demoRole == "Admin") {
+            openAdminWindow(demoDisplayName);
+        } else {
+            openUserWindow(demoDisplayName);
+        }
+        return;
+    }
+
     // Intentar validar contra VPS
     if (validateCredentials(username, password)) {
         QString role = getRole(username);
@@ -229,6 +269,8 @@ void MainWindow::attemptLogin()
 
         if (role == tr("Empresa")) {
             openEmpresaWindow(displayName);
+        } else if (role == tr("Admin")) {
+            openAdminWindow(displayName);
         } else {
             openUserWindow(displayName);
         }
@@ -252,6 +294,14 @@ void MainWindow::openEmpresaWindow(const QString &displayName)
     auto *empresaWindow = new EmpresaWindow(displayName);
     empresaWindow->setAttribute(Qt::WA_DeleteOnClose);
     empresaWindow->show();
+    close();
+}
+
+void MainWindow::openAdminWindow(const QString &displayName)
+{
+    auto *adminWindow = new AdminWindow(displayName);
+    adminWindow->setAttribute(Qt::WA_DeleteOnClose);
+    adminWindow->show();
     close();
 }
 
@@ -282,6 +332,8 @@ void MainWindow::setupAutoLogin()
         
         if (role == "Empresa") {
             openEmpresaWindow(displayName);
+        } else if (role == "Admin") {
+            openAdminWindow(displayName);
         } else {
             openUserWindow(displayName);
         }

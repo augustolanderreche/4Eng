@@ -1,244 +1,74 @@
-RESUMEN COMPLETO DE PREPARACIÓN - FASE 2 INICIAL
-Fecha última actualización: 2026-05-15
+RESUMEN DE PREPARACION - ESTADO ACTUAL
+Fecha ultima actualizacion: 2026-05-18
 Proyecto: 4eng-Login
 
 ==================================================
-¿QUE HICIMOS? (ESTADO ACTUAL AL 2026-05-15)
+QUE SE CAMBIO RECIENTEMENTE
 ==================================================
 
-COMPLETADO:
-1. ✅ Migración VPS aplicada (migration_phase2_initial.sql)
-   - Columna last_login agregada a users en VPS
-   - 13 índices creados para performance de Fase 2
+1) UI por roles completada en nivel demo
+- Usuario: menu lateral, tarjetas, chat IA, campana de notificaciones.
+- Empresa: menu lateral, tarjetas, chat IA, solicitudes, CVs.
+- Admin: dashboard y gestion de usuarios/empresas/IA.
 
-2. ✅ Base de datos SQLite LOCAL implementada
-   - Archivo: localdbconfig.h
-   - 7 tablas: sessions, login_attempts, failed_attempts,
-     offline_cache, user_preferences, audit_log, sync_metadata
-   - Se crea automáticamente en primera ejecución
+2) Rediseno visual
+- Usuario en gama violeta (dark moderno).
+- Empresa en gama azul (dark moderno).
+- Layout consistente con menu izquierdo fijo y contenido centrado.
 
-3. ✅ Lógica de sesiones en Qt (mainwindow.cpp actualizado)
-   - Auto-login: recupera sesión al abrir app
-   - Bloqueo: 5 intentos fallidos → 15 min bloqueado
-   - Historial: login_attempts guardado siempre
-   - Sync al cerrar: closeEvent() sincroniza y cierra sesión
-   - Background sync: timer cada 5 minutos (placeholder listo)
+3) Funcionalidad de botones (modo mock)
+- Se agregaron acciones de UI para la mayoria de botones:
+  - altas/bajas en listas
+  - cambios de estado
+  - mensajes de confirmacion
+  - interacciones de chat
 
-4. ✅ Instrucciones paso a paso para migración en VPS (COMPLETADO)
+4) Nueva publicacion en Empresa
+- Se agrego pantalla/formulario dedicada para crear publicacion.
+- Campos de titulo, skills, ubicacion, modalidad y descripcion.
+- Publicar inserta la tarjeta en Publicaciones (modo demo).
 
-5. ✅ Documentación de estado final + referencia FastAPI
-
-PENDIENTE INMEDIATO:
-⚠ Fix QMYSQL driver en Windows (ver pendientes_proyecto_final.txt)
-
-==================================================
-ARCHIVOS CREADOS/MODIFICADOS
-==================================================
-
-c:\Users\aland\4Eng\Login\migration_phase2_initial.sql
-├─ ¿Qué es?: Script SQL listo para ejecutar en BD
-├─ Contiene: ALTER TABLE + CREATE INDEX (13 índices)
-├─ Estado: ✅ APLICADO EN VPS el 2026-05-15
-└─ Duración aplicación: ~2 minutos
-
-c:\Users\aland\4Eng\Login\localdbconfig.h  ← NUEVO 2026-05-15
-├─ ¿Qué es?: Header C++ con toda la lógica SQLite local
-├─ Contiene: 7 tablas, funciones de sesión, bloqueo, caché, auditoría
-├─ Uso: Incluir en mainwindow.cpp (ya incluido)
-└─ BD en: %APPDATA%/4eng-Login/local.db (auto-creado)
-
-c:\Users\aland\4Eng\Login\INSTRUCCIONES_MIGRACION_VPS.txt
-├─ ¿Qué es?: Paso a paso para aplicar cambios en el VPS
-├─ Audiencia: Cualquiera (instrucciones claras)
-├─ Opciones: 2 métodos (copiar-pegar o archivo)
-└─ Incluye: Verificación y troubleshooting
-
-c:\Users\aland\4Eng\Login\ESTADO_SCHEMA_POST_MIGRACION.txt
-├─ ¿Qué es?: Documenta qué tendrá la BD después
-├─ Contiene: Lista de campos, índices, ejemplos
-├─ Propósito: Referencia rápida del nuevo schema
-└─ Audiencia: Devs que necesiten consultar
-
-c:\Users\aland\4Eng\Login\REFERENCIA_FASTAPI_IMPLEMENTATION.txt
-├─ ¿Qué es?: Guía para cuando implemente FastAPI
-├─ Contiene: Endpoints, lógica, validaciones, modelos
-├─ Propósito: Que FastAPI sepa exactamente qué hacer
-└─ Audiencia: Dev que implemente FastAPI (Fase 2)
+5) Correcciones tecnicas
+- Se corrigieron errores de compilacion en empresawindow.cpp
+  por orden de declaraciones y conexiones.
 
 ==================================================
-PROCEDIMIENTO RECOMENDADO
+QUE FALTA PARA TERMINAR EL PROYECTO
 ==================================================
 
-PASO 1: APLICAR MIGRACIÓN EN VPS (HOY O MAÑANA)
-────────────────────────────────────────────────
-Quién: Tú (o admin VPS)
-Dónde: VPS Contabo
-Acción: Ejecutar migration_phase2_initial.sql
-Duración: 2 minutos
-Riesgo: CERO (solo agrega índices + columna NULL)
-Qt afectado: NO (sigue funcionando igual)
+A) Integracion real de datos (prioridad alta)
+- Conectar botones y vistas a BD/API real.
+- Eliminar dependencias de datos hardcodeados.
 
-Cómo:
-1. Lee INSTRUCCIONES_MIGRACION_VPS.txt
-2. Sigue el paso 1 (SSH al VPS)
-3. Sigue el paso 2 (ejecuta SQL - 2 opciones disponibles)
-4. Sigue el paso 3 (verifica con SHOW INDEX/DESCRIBE)
-5. Listo ✓
+B) Seguridad y arquitectura
+- Quitar login demo hardcodeado de release.
+- Migrar auth a FastAPI + password hash.
+- Evitar SQL directo desde Qt para produccion.
 
-────────────────────────────────────────────────
+C) Persistencia de negocio completa
+- Publicaciones, postulaciones, CVs, notificaciones y requests con persistencia real.
+- Gestion Admin con operaciones reales (idealmente soft delete + auditoria).
 
-PASO 2: PREPARAR FASTAPI (PRÓXIMAS SEMANAS)
-────────────────────────────────────────────
-Quién: Dev que haga FastAPI
-Dónde: En tu máquina (dev) o VPS
-Acción: Implementar endpoints usando REFERENCIA_FASTAPI_IMPLEMENTATION.txt
-Duración: 3-5 días (estimado)
-
-Endpoints a implementar:
-✅ POST /auth/login
-✅ POST /auth/register/user
-✅ POST /auth/register/company
-✅ GET /auth/me
-✅ GET /health
-
-Qué usar de la BD:
-✅ Tabla users (con los índices nuevos)
-✅ password_hash para nuevas cuentas (bcrypt)
-✅ last_login para auditoria
-✅ is_active para validar usuarios activos
-
-────────────────────────────────────────────────
-
-PASO 3: MIGRACIÓN GRADUAL password → password_hash
-────────────────────────────────────────────────
-Quién: FastAPI dev + Qt dev
-Cuándo: Cuando FastAPI esté listo
-
-Estrategia:
-- Qt actual: sigue usando password (no toca password_hash)
-- FastAPI nuevo: usa password_hash para nuevas cuentas
-- Usuarios viejos: FastAPI verifica password si password_hash es NULL
-- Primera vez que user viejo loguea en FastAPI:
-  → Se migra a bcrypt automáticamente
-  → FastAPI actualiza password_hash
-  → Siguiente login usa password_hash
-
-Esto permite transición sin romper nada.
-
-────────────────────────────────────────────────
-
-PASO 4: VALIDACIÓN FINAL
-────────────────────────
-Verificar:
-✅ Qt sigue haciendo login/registro normal
-✅ FastAPI endpoints funcionan
-✅ last_login se actualiza en FastAPI
-✅ password_hash se llena en nuevas cuentas
-✅ Usuarios viejos se migran automáticamente al loguear en FastAPI
+D) QA y pruebas
+- Pruebas por rol.
+- Pruebas de regresion de UI.
+- Pruebas de integracion Qt + backend.
 
 ==================================================
-IMPACTOS Y CAMBIOS
+RECOMENDACION DE CIERRE
 ==================================================
 
-En Qt (CERO cambios):
-✅ Sigue usando password en texto plano
-✅ Sigue consultando tabla users
-✅ No ve los índices (son transparentes)
-✅ is_active no se valida aún (no es requerido hoy)
+Paso 1:
+- Definir feature flag: MODO_DEMO vs MODO_REAL.
 
-En FastAPI (TODO nuevo):
-✅ Usa password_hash (bcrypt) para seguridad
-✅ Consulta tabla users (con índices rápidos)
-✅ Actualiza last_login en cada login
-✅ Valida is_active
+Paso 2:
+- Conectar primero Empresa (publicaciones/postulaciones), luego Usuario, luego Admin.
 
-En BD:
-✅ +1 columna (last_login NULL por ahora)
-✅ +13 índices (~20 MB extra)
-✅ Sin pérdida de datos
-✅ Backward compatible con Qt actual
+Paso 3:
+- Endurecer seguridad y desactivar hardcode de login.
 
-==================================================
-CHECKLIST FINAL (ANTES DE EMPEZAR)
-==================================================
-
-Antes de ejecutar la migración, verifica:
-
-✅ Tienes acceso SSH al VPS
-✅ MySQL/MariaDB está corriendo en VPS
-✅ La base login_db ya existe
-✅ Las 9 tablas ya existen (creadas previamente)
-✅ Tienes password de root MySQL para VPS
-✅ Qt actual está funcionando (opcional, para comprobar antes)
-
-Si algo falta, resuelve primero:
-- ¿No acceso SSH? → Contacta al proveedor VPS
-- ¿MySQL no corre? → sudo systemctl start mariadb
-- ¿No existe login_db? → Crea con los scripts previos
-- ¿No recuerdas password? → Resetea con mysql_secure_installation
-
-==================================================
-SIGUIENTES PREGUNTAS (SI LAS TIENES)
-==================================================
-
-P: ¿Es seguro ejecutar estos cambios ahora?
-R: Sí. Solo agregan columna NULL e índices. No elimina nada, no modifica datos.
-
-P: ¿Qt se va a romper?
-R: No. Qt sigue igual. Los índices aceleran queries, punto.
-
-P: ¿Cuándo debo ejecutar esto?
-R: Hoy, mañana, cuando quieras. No afecta a Qt.
-   Después: cuando implementes FastAPI.
-
-P: ¿Puedo revertir si algo sale mal?
-R: Sí. DROP INDEX idx_name; DROP COLUMN last_login; vuelve atrás.
-   Pero es muy difícil que algo salga mal (son operaciones estándar).
-
-P: ¿Necesito downtime?
-R: No. En MariaDB los ALTER TABLE online suelen funcionar sin lock.
-
-P: ¿Afecta a phpMyAdmin?
-R: No. phpMyAdmin solo navega la BD, no se rompe.
-
-P: ¿Cuándo implemento FastAPI?
-R: Después de que verifiques que la migración funcionó.
-   Luego sigues REFERENCIA_FASTAPI_IMPLEMENTATION.txt
-
-==================================================
-DOCUMENTOS DE REFERENCIA PARA FUTURO
-==================================================
-
-Cuando llegue la hora de FastAPI, lee en este orden:
-
-1. REFERENCIA_FASTAPI_IMPLEMENTATION.txt
-   └─ Endpoints, lógica, validaciones exactas
-
-2. ESTADO_SCHEMA_POST_MIGRACION.txt
-   └─ Qué cambió en la BD, esquema final
-
-3. pendientes_proyecto_final.txt
-   └─ Contexto general del proyecto
-
-4. fase_2_fastapi_explicacion.txt
-   └─ Qué es Fase 2 y por qué
-
-==================================================
-RESUMEN EJECUTIVO
-==================================================
-
-Hicimos:
-✅ Script SQL listo (migration_phase2_initial.sql)
-✅ Instrucciones claras (INSTRUCCIONES_MIGRACION_VPS.txt)
-✅ Documentación de referencia (x2 archivos)
-✅ Validación que Qt no se rompe ✓
-
-Próximo paso:
-→ Ejecuta la migración en VPS (2 min)
-→ Verifica que funciona (1 min)
-→ Espera a que FastAPI esté listo para usar índices + password_hash
-
-¿Algo que aclarar antes de ejecutar?
+Paso 4:
+- Ejecutar QA final y preparar release candidate.
 
 ==================================================
 FIN

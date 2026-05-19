@@ -36,9 +36,12 @@ private:
     void syncOfflineCache();
     
     bool validateCredentials(const QString &username, const QString &password);
+    bool validateHardcodedDemoLogin(const QString &username, const QString &password,
+                                    QString &role, QString &displayName);
     QString getDisplayName(const QString &username);
     QString getRole(const QString &username);
     bool userExists(const QString &username);
+    void openAdminWindow(const QString &displayName);
     void openEmpresaWindow(const QString &displayName);
     void openUserWindow(const QString &displayName);
 

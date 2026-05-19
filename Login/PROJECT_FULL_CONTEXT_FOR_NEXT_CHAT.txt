@@ -1,522 +1,165 @@
 PROJECT: 4eng-Login
-LAST UPDATED: 2026-05-15
+LAST UPDATED: 2026-05-18
 STACK: Qt Widgets + Qt SQL (QMYSQL + QSQLITE) + C++17 + qmake
 WORKSPACE ROOT: c:\Users\aland\4Eng\Login
 OS (CURRENT DEV MACHINE): Windows
 
-PRIMARY CONTEXT FILE:
-- This is the main handoff/context file to read first in the next chat.
-- Secondary docs add detail, but this file should be treated as the source of truth for current project state.
-
 ==================================================
 1) QUICK SUMMARY
 ==================================================
-This is a desktop login/registration app built with Qt Widgets.
-Fase 1 actual conecta directo a MySQL/MariaDB (VPS) usando QMYSQL.
-Fase 2 objetivo: Qt deja conexión directa y consume FastAPI vía Nginx (reverse proxy).
-También usa SQLite local para session management, offline cache y bruteforce protection.
+Desktop app con login por roles (Usuario, Empresa, Admin).
+Actualmente el proyecto tiene:
+- Flujo de login real por BD (si QMYSQL esta disponible)
+- Cuentas demo hardcodeadas para test UI
+- Pantallas de Usuario, Empresa y Admin muy avanzadas en UX
+- Muchas acciones UI funcionales en modo mock
 
-Users can:
-- Log in with username/password.
-- Register as Empresa (company) or Usuario (individual).
-- Be redirected after login by role:
-  - role == "Empresa" -> EmpresaWindow
-  - any other role -> UserWindow
-
-En Fase 1 las credenciales están en variables de entorno vía databaseconfig.h.
-En Fase 2 las credenciales de DB quedan solo del lado backend (FastAPI), no en Qt.
-
-LOCAL SQLITE (NEW - 2026-05-15):
-- Managed via localdbconfig.h
-- Path: %APPDATA%/4eng-Login/local.db (created automatically on first run)
-- Handles: sessions, login history, bruteforce blocking, offline cache,
-           user preferences, audit log, sync metadata
-
-IMPORTANT OPERATIONS STATUS (VPS):
-- phpMyAdmin was enabled and tested successfully from browser.
-- Later it was intentionally disabled in Apache for security (current result: /phpmyadmin returns 404 Not Found).
-- UFW now allows 80/443 (web access control moved to Apache config state).
-- Docker exists on VPS with project containers observed (vps-api-1, vps-db-1); phpMyAdmin in this setup was not served from Docker.
-- Migration phase2_initial.sql was applied on VPS: added last_login column + 13 indexes.
-
-KNOWN ISSUE:
-- QMYSQL driver not found on Windows dev machine (warning on startup).
-  The app starts normally but cannot connect to VPS MySQL.
-  Fix: copy qsqlmysql.dll to Qt plugins folder (see section 7).
-  SQLite local DB works fine regardless.
+Cuentas demo activas:
+- user_demo / user123
+- empresa_demo / empresa123
+- admin_demo / admin123
 
 ==================================================
 2) CURRENT FILE STRUCTURE (SOURCE LEVEL)
 ==================================================
 - 4eng-Login.pro
 - main.cpp
-- databaseconfig.h              ← VPS MySQL connection helper
-- localdbconfig.h               ← LOCAL SQLite connection helper (NEW 2026-05-15)
-- mainwindow.h / mainwindow.cpp ← Login form + local DB logic (UPDATED 2026-05-15)
+- databaseconfig.h
+- localdbconfig.h
+- mainwindow.h / mainwindow.cpp
 - registerwindow.h / registerwindow.cpp
-- empresawindow.h / empresawindow.cpp
 - userwindow.h / userwindow.cpp
+- empresawindow.h / empresawindow.cpp
+- adminwindow.h / adminwindow.cpp
 
-Documentation files:
-- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt  ← este archivo
-- SQLITE_LOCAL_DB_STRUCTURE.txt           ← estructura SQLite local completa (NEW 2026-05-15)
-- ESTADO_SCHEMA_POST_MIGRACION.txt        ← estado del schema VPS post-migración
-- INSTRUCCIONES_MIGRACION_VPS.txt         ← paso a paso migración VPS (COMPLETADO)
-- RESUMEN_PREPARACION_FASE2.txt           ← resumen de preparación Fase 2
-- pendientes_proyecto_final.txt           ← tareas pendientes actualizadas
-- documentacion_base_datos_login_db.txt   ← documentación técnica de la BD VPS
-- migration_phase2_initial.sql            ← script SQL aplicado en VPS
-- db_connection_instructions.txt
-- tutorial_contabo_phpmyadmin_paso_a_paso.txt
-- fase_2_fastapi_explicacion.txt
+Docs principales:
+- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt (este archivo)
+- pendientes_proyecto_final.txt
+- RESUMEN_PREPARACION_FASE2.txt
+- ESTADO_SCHEMA_POST_MIGRACION.txt
 - REFERENCIA_FASTAPI_IMPLEMENTATION.txt
-- readme.md
-
-Important rename already done:
-- old: adminwindow.h/.cpp + AdminWindow
-- new: empresawindow.h/.cpp + EmpresaWindow
 
 ==================================================
 3) BUILD AND PROJECT CONFIG
 ==================================================
-File: 4eng-Login.pro
+Archivo: 4eng-Login.pro
 - QT += widgets sql
 - CONFIG += c++17
 - TEMPLATE = app
 - TARGET = 4eng-Login
 
-SOURCES:
+SOURCES activos:
 - main.cpp
 - mainwindow.cpp
 - registerwindow.cpp
-- empresawindow.cpp
 - userwindow.cpp
+- empresawindow.cpp
+- adminwindow.cpp
 
-HEADERS:
+HEADERS activos:
 - databaseconfig.h
-- localdbconfig.h       ← NUEVO
-- empresawindow.h
+- localdbconfig.h
 - mainwindow.h
 - registerwindow.h
 - userwindow.h
-
-Generated build directory:
-- build/Desktop_Qt_6_11_0_MinGW_64_bit-Debug/...
-
-==================================================
-4) UI FLOW / NAVIGATION
-==================================================
-Entry point:
-- main.cpp creates QApplication, sets Fusion style and a global dark stylesheet,
-  then shows MainWindow.
-
-MainWindow behavior (UPDATED):
-- On startup: checks SQLite for active session → auto-login if found.
-- If no session: displays login form (username, password).
-- Buttons: Entrar, Registrar.
-- Entrar -> attemptLogin().
-- Registrar -> opens RegisterWindow.
-
-Login logic in MainWindow (UPDATED 2026-05-15):
-1. Validate non-empty fields.
-2. checkAndHandleFailedAttempts(username) → check local SQLite block.
-   - If blocked (>=5 failed attempts): show "Bloqueado X segundos", abort.
-3. validateCredentials(username, password) → check VPS MySQL.
-4. If VPS fails: incrementFailedAttempts() in SQLite, log attempt.
-5. If VPS success:
-   - role = getRole(username), displayName = getDisplayName(username)
-   - saveLoginToLocal() → save session in SQLite, reset failed attempts
-   - role == "Empresa" => openEmpresaWindow(displayName)
-   - else => openUserWindow(displayName)
-
-Auto-login (NEW):
-- setupAutoLogin() called on startup.
-- Checks SQLite sessions WHERE is_active=1.
-- If found: skips login form, goes directly to role window.
-
-Background sync (NEW):
-- QTimer every 5 minutes: performBackgroundSync() → syncOfflineCache().
-- QTimer inactivity 30 min: closes session automatically.
-
-Close event (NEW):
-- closeEvent() triggers syncOfflineCache() + logAction("app_closed") + closeSession().
-
-RegisterWindow behavior:
-- QTabWidget with two tabs: Empresa / Usuario
-- Empresa: username, password, email
-- Usuario: firstName, lastName, username, password, language, email, age (10-120)
-- Validation: no empty fields, email contains '@', username unique
-- Inserts to VPS MySQL users table
-
-Post-login windows:
-- EmpresaWindow: welcome label "Hola Empresa <displayName>"
-- UserWindow: welcome label "Hola Usuario <displayName>"
-
-==================================================
-5) DATABASE CONNECTION MODEL
-==================================================
-
---- VPS MYSQL (databaseconfig.h) ---
-Connection name: login_connection
-Function: DatabaseConfig::getLoginConnection()
-Environment variables:
-- LOGIN_DB_HOST (default: 127.0.0.1)
-- LOGIN_DB_PORT (default: 3306)
-- LOGIN_DB_NAME (default: login_db)
-- LOGIN_DB_USER (default: qtuser)
-- LOGIN_DB_PASSWORD (default: qtpass)
-
-⚠ WARNING: QMYSQL driver missing on Windows dev machine.
-  App starts but cannot connect to VPS.
-  Fix: see section 7.
-
---- LOCAL SQLITE (localdbconfig.h) [NEW 2026-05-15] ---
-Connection name: local_connection
-Function: LocalDBConfig::getLocalConnection()
-Path: QStandardPaths::AppDataLocation + "/local.db"
-      = C:\Users\aland\AppData\Roaming\4eng-Login\local.db
-Created: automatically on first run (directory + file)
-
-Who uses it:
-- MainWindow::setupLocalDatabase()
-- MainWindow::setupAutoLogin()
-- MainWindow::attemptLogin()
-- MainWindow::closeEvent()
-
-==================================================
-6) DATABASE SCHEMA
-==================================================
-
---- VPS MySQL (login_db) - ESTADO POST-MIGRACIÓN 2026-05-15 ---
-Tablas: users, engineer_profiles, company_profiles, cv_documents,
-        job_posts, applications, ai_evaluations, training_recommendations,
-        admin_audit_logs
-
-users campos clave:
-- id, role, username (UNIQUE), password (texto plano, Qt lo usa),
-  email (UNIQUE), display_name, programming_language, age,
-  password_hash (NULL, FastAPI lo usará), is_active,
-  created_at, updated_at,
-  last_login (DATETIME NULL) ← NUEVO, FastAPI lo actualizará
-
-Índices agregados (migration_phase2_initial.sql):
-- idx_users_username, idx_users_email, idx_users_role
-- idx_applications_engineer, idx_applications_job, idx_applications_company, idx_applications_status
-- idx_job_posts_company, idx_job_posts_status
-- idx_cv_documents_engineer
-- idx_ai_evaluations_application
-- idx_engineer_profiles_user, idx_company_profiles_user
-
---- LOCAL SQLite (local.db) [NEW 2026-05-15] ---
-Ver SQLITE_LOCAL_DB_STRUCTURE.txt para detalle completo.
-
-Tablas:
-- sessions          → sesión activa, auto-login
-- login_attempts    → historial de logins (exitosos y fallidos)
-- failed_attempts   → bloqueo por intentos fallidos (>=5 → 15 min bloqueado)
-- offline_cache     → datos del VPS en JSON para funcionar sin internet
-- user_preferences  → tema, idioma, configuración local
-- audit_log         → auditoría de acciones locales
-- sync_metadata     → rastreo de sincronizaciones
-
-==================================================
-7) FIX PENDIENTE: QMYSQL DRIVER EN WINDOWS
-==================================================
-Problema: "can not load requested driver 'QMYSQL'"
-Causa: qsqlmysql.dll no está en la ruta de plugins de Qt.
-
-Solución:
-1. Buscar qsqlmysql.dll en la instalación de Qt:
-   C:\Qt\6.11.0\mingw_64\plugins\sqldrivers\qsqlmysql.dll
-2. Copiar al directorio del ejecutable:
-   build/Desktop_Qt_6_11_0_MinGW_64_bit-Debug/debug/sqldrivers/
-3. También copiar libmysql.dll al directorio del ejecutable.
-4. Libmysql.dll se obtiene de MySQL Connector/C o de la instalación de MariaDB.
-
-Sin este fix: Login contra VPS no funciona, SQLite local sí funciona.
-
-==================================================
-8) PRÓXIMOS PASOS RECOMENDADOS
-==================================================
-Prioridad INMEDIATA:
-1. ✅ Fix QMYSQL driver (solo si se mantiene Fase 1 temporal)
-2. Implementar sincronización real de offline_cache en syncOfflineCache()
-3. UI "Últimas conexiones": mostrar historial de login_attempts en la pantalla de login
-
-Prioridad ALTA:
-4. FastAPI endpoints: /auth/login, /auth/register/user, /auth/register/company
-5. Qt consume FastAPI SIEMPRE vía Nginx (en lugar de MySQL directo)
-6. FastAPI actualiza last_login en VPS al hacer login
-
-Prioridad MEDIA:
-7. Completar EmpresaWindow (gestión de vacantes)
-8. Completar UserWindow (perfil, CVs, postulaciones)
-9. Panel Admin
-10. Integración IA evaluación de CV
+- empresawindow.h
+- adminwindow.h
 
 ==================================================
 4) UI FLOW / NAVIGATION
 ==================================================
-Entry point:
-- main.cpp creates QApplication, sets Fusion style and a global dark stylesheet,
-  then shows MainWindow.
+Entry:
+- main.cpp crea QApplication, estilo Fusion y stylesheet base.
 
-MainWindow behavior:
-- Displays login form (username, password).
-- Buttons: Entrar, Registrar.
-- Entrar -> attemptLogin().
-- Registrar -> opens RegisterWindow.
-
-Login logic in MainWindow:
-1. Validate non-empty fields.
-2. validateCredentials(username, password) checks users table.
-3. If success:
-   - role = getRole(username)
-   - displayName = getDisplayName(username), fallback to username if empty
-   - role == "Empresa" => openEmpresaWindow(displayName)
-   - else => openUserWindow(displayName)
-
-RegisterWindow behavior:
-- QTabWidget with two tabs:
-  - Empresa
-  - Usuario
-
-Empresa registration fields:
-- username
-- password
-- email
-Validation:
-- no empty fields
-- email must contain '@'
-- username must not already exist
-Insert into DB with role "Empresa" and display_name=username.
-
-Usuario registration fields:
-- firstName
-- lastName
-- username
-- password
-- language (combo)
-- email
-- age
-Validation:
-- all required fields present
-- email contains '@'
-- age 10..120
-- username unique
-Insert with role "Usuario" and display_name="firstName lastName".
-
-Post-login windows:
-- EmpresaWindow: simple welcome label "Hola Empresa <displayName>"
-- UserWindow: simple welcome label "Hola Usuario <displayName>"
-
-==================================================
-5) DATABASE CONNECTION MODEL
-==================================================
-Connection helper file:
-- databaseconfig.h
-
-Single connection name:
-- login_connection
-
-Function:
-- DatabaseConfig::getLoginConnection(const QString &connectionName = "login_connection")
-
-Behavior:
-- Reuses existing named connection if already present.
-- Otherwise creates QMYSQL connection and configures from environment.
-
-Environment variables used:
-- LOGIN_DB_HOST (default: 127.0.0.1)
-- LOGIN_DB_PORT (default: 3306)
-- LOGIN_DB_NAME (default: login_db)
-- LOGIN_DB_USER (default: qtuser)
-- LOGIN_DB_PASSWORD (default: qtpass)
-
-Who uses it:
-- MainWindow::setupDatabase()
-- RegisterWindow constructor
-
-Note:
-- The app opens DB lazily before queries (if !m_db.isOpen(), then m_db.open()).
-
-==================================================
-6) DATABASE SCHEMA EXPECTED BY APP
-==================================================
-Database:
-- login_db
-
-App runtime dependency (strict minimum):
-- users
-
-Current VPS schema (created for future backend too):
-- users
-- engineer_profiles
-- company_profiles
-- cv_documents
-- job_posts
-- applications
-- ai_evaluations
-- training_recommendations
-- admin_audit_logs
-
-Minimum users table required by current Qt app:
-CREATE TABLE users (
-  id INT AUTO_INCREMENT PRIMARY KEY,
-  role VARCHAR(20) NOT NULL,
-  username VARCHAR(50) NOT NULL UNIQUE,
-  password VARCHAR(255) NOT NULL,
-  email VARCHAR(120),
-  display_name VARCHAR(120),
-  programming_language VARCHAR(50),
-  age INT
-);
-
-Columns actually queried/used by code:
-- login query: username, password
-- role routing: role
-- greeting name: display_name
-- registration insert: role, username, password, email, display_name,
-  programming_language, age
-
-Seed data currently present in users (test accounts):
-- Empresa / empresa / empresa123
-- Usuario / user / user123
-- Admin / admin / admin123
-
-==================================================
-7) SQL OPERATIONS USED IN CODE
-==================================================
 MainWindow:
-- SELECT COUNT(*) FROM users WHERE username = :user AND password = :pass
-- SELECT display_name FROM users WHERE username = :user LIMIT 1
-- SELECT role FROM users WHERE username = :user LIMIT 1
+- Login + Registro.
+- Ruteo por rol:
+  - Empresa -> EmpresaWindow
+  - Admin -> AdminWindow
+  - Usuario -> UserWindow
+- Soporta cuentas demo hardcodeadas para QA visual.
 
 RegisterWindow:
-- SELECT COUNT(*) FROM users WHERE username = :user
-- INSERT INTO users (...)
+- Registro Empresa/Usuario (estructura actual de proyecto).
+
+UserWindow (redisenada):
+- Menu lateral izquierdo fijo.
+- Estilo dark + gama violeta.
+- Secciones:
+  - CV
+  - Puestos
+  - Solicitudes
+  - Chat IA
+- Notificaciones por campana (popup).
+- Botones funcionales en modo mock.
+
+EmpresaWindow (redisenada):
+- Misma estructura de navegacion que UserWindow.
+- Estilo dark + gama azul.
+- Secciones:
+  - Publicaciones
+  - Postulaciones
+  - CVs
+  - Solicitudes
+  - Chat IA
+- Incluye pantalla "Nueva publicacion" con formulario.
+- Botones funcionales en modo mock.
+
+AdminWindow:
+- Tabs de dashboard, usuarios, empresas, aceptaciones, gestion IA.
+- Puede abrir vista de Usuario y Empresa para test.
+- Seccion usuarios enfocada en ingenieros.
 
 ==================================================
-8) SECURITY STATUS (IMPORTANT)
+5) DATABASE CONNECTION MODEL
 ==================================================
-Current state:
-- Passwords are stored and checked as plain text.
-- Direct DB connection from client app to VPS DB (current Qt phase).
-- Qt currently does NOT use SHA2, bcrypt, Argon2, or password_hash for auth.
-- phpMyAdmin endpoint currently disabled (404) to prevent public access.
+VPS MySQL:
+- Via databaseconfig.h
+- Variables esperadas:
+  - LOGIN_DB_HOST
+  - LOGIN_DB_PORT
+  - LOGIN_DB_NAME
+  - LOGIN_DB_USER
+  - LOGIN_DB_PASSWORD
 
-Security implications:
-- Not production-safe for real users.
-- Vulnerable if DB credentials are leaked from client environment.
-- Test credentials in plain text must be replaced/removed before production.
+SQLite local:
+- Via localdbconfig.h
+- Maneja sesiones, intentos, cache offline, auditoria.
 
-Recommended improvements (future):
-1. Hash passwords (Argon2/bcrypt/PBKDF2) + salt.
-2. Move auth to backend API (server-side), avoid direct client DB access.
-3. Restrict DB user permissions and host allowlist tightly.
-4. Use TLS or secure tunnel where possible.
-5. Keep phpMyAdmin disabled by default; enable only for maintenance windows.
-
-==================================================
-9) DEPENDENCIES / RUNTIME REQUIREMENTS
-==================================================
-Qt modules needed:
-- widgets
-- sql
-
-Driver requirement:
-- QMYSQL plugin compatible with installed Qt build.
-
-If QMYSQL missing, DB open fails and status label shows DB error.
+Nota importante:
+- Parte de la UI actual esta en modo mock para acelerar validacion visual.
+- Falta conectar acciones a persistencia real en BD para cierre funcional completo.
 
 ==================================================
-10) ENVIRONMENT EXAMPLE (POWERSHELL)
+6) KNOWN ISSUES / RISKS
 ==================================================
-Session-only variables:
-$env:LOGIN_DB_HOST = "IP_DEL_VPS"
-$env:LOGIN_DB_PORT = "3306"
-$env:LOGIN_DB_NAME = "login_db"
-$env:LOGIN_DB_USER = "qtuser"
-$env:LOGIN_DB_PASSWORD = "qtpass"
+- QMYSQL puede faltar en algunas maquinas Windows.
+- Cuentas demo hardcodeadas no deben quedar en produccion.
+- Acciones de botones no todas persisten todavia en BD (mock UI).
 
 ==================================================
-11) USER-FACING TEXT / LANGUAGE
+7) WHAT IS DONE VS WHAT IS MISSING
 ==================================================
-App strings are Spanish (tr() used).
-Examples:
-- "Iniciar sesion"
-- "Registrar"
-- "Panel empresa"
-- "Panel usuario"
+Hecho:
+- UX avanzada para los 3 roles.
+- Navegacion y estructura por rol.
+- Acciones de interfaz operativas a nivel UI.
+- Correccion de errores recientes de compilacion.
 
-Role matching is string-based:
-- exact check: role == tr("Empresa")
-Any other role routes to UserWindow.
-
-==================================================
-12) KNOWN BEHAVIOR DETAILS / EDGE CASES
-==================================================
-- If DB cannot open, status label shows detailed SQL error text.
-- On invalid login credentials, user gets explicit message.
-- Registration clears fields on success.
-- Register window opens without closing login window.
-- Empresa/User windows close login window when opened from successful login.
-- MainWindow still contains an unused helper method userExists().
-- Registration helpers actively used by the app live in RegisterWindow.
-
-Infra behavior notes:
-- If phpMyAdmin is re-enabled in Apache, route is typically /phpmyadmin/ (with trailing slash due to redirect).
-- If disabled via a2disconf phpmyadmin, external users see Apache 404 on /phpmyadmin.
+Falta:
+- Integracion de todos los botones con DB/API real.
+- Migrar definitivamente auth a FastAPI.
+- Tests funcionales y de regresion.
+- Endurecimiento de seguridad para release.
 
 ==================================================
-13) WHAT CHANGED RECENTLY
+8) NEXT RECOMMENDED STEPS
 ==================================================
-1. DB setup refactor:
-- Replaced hardcoded placeholders in windows with shared helper (databaseconfig.h).
-- Credentials now come from env vars with defaults.
-
-2. Naming refactor:
-- Renamed AdminWindow to EmpresaWindow.
-- Renamed files adminwindow.* to empresawindow.*.
-- Updated includes and .pro references accordingly.
-
-3. Instructions update:
-- db_connection_instructions.txt now documents env-var approach.
-- PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt should be preferred as the first file to read in future chats.
-
-4. New infra + DB docs added:
-- tutorial_contabo_phpmyadmin_paso_a_paso.txt
-- documentacion_base_datos_login_db.txt
-
-5. VPS web/security operations completed:
-- Apache + phpMyAdmin installed and validated.
-- UFW configured to allow 80/443.
-- phpMyAdmin later disabled in Apache for safety when not in use.
-
-6. Apache information leakage hardening discussed:
-- Recommended in /etc/apache2/conf-available/security.conf:
-  - ServerTokens Prod
-  - ServerSignature Off
-  - TraceEnable Off
-
-7. Password handling decision:
-- A temporary SHA2-based approach was discarded.
-- Current Qt code uses plain text in users.password only as a temporary prototype stage.
-- Planned secure implementation is deferred to FastAPI using password_hash with Argon2id or bcrypt.
+1. Persistir acciones de Empresa y Usuario en BD real.
+2. Reemplazar login demo por feature flag o build de QA.
+3. Implementar endpoints FastAPI minimos y conectar Qt.
+4. QA por rol + pruebas de error.
 
 ==================================================
-14) CLEAN REBUILD NOTE
+FIN
 ==================================================
-If stale generated files mention old adminwindow names:
-- Clean build directory and rebuild.
-This is expected after file/class rename in Qt projects.
-
-==================================================
-15) NEXT CHAT HANDOFF PROMPT (OPTIONAL)
-==================================================
-Suggested message to next chat:
-"Lee primero PROJECT_FULL_CONTEXT_FOR_NEXT_CHAT.txt. Despues usa documentacion_base_datos_login_db.txt y pendientes_proyecto_final.txt como soporte.
-El estado actual es: Qt desktop con login/registro directo sobre users, password en texto plano temporal, y FastAPI pendiente para mover auth a password_hash con Argon2id o bcrypt.
-Necesito seguir con la separacion de auth hacia backend y definir endpoints y migracion segura." 
-
-END OF CONTEXT FILE

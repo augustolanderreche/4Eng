@@ -1,91 +1,93 @@
-TUTORIAL COMPLETO: BASE DE DATOS EN VPS CONTABO CON PHPMYADMIN (LISTA PARA FASTAPI/NGINX)
-Fecha: 2026-05-11
+TUTORIAL ACTUALIZADO: AMPLIAR BASE DE DATOS 4ENG EXISTENTE (login_db)
+Fecha: 2026-05-18
+Objetivo: Modificar la BD existente en el VPS (que solo tiene tabla usuarios) para agregarle el esquema oficial de 9 tablas
 
-Objetivo
-- Instalar y asegurar MariaDB/MySQL en tu VPS Contabo.
-- Instalar phpMyAdmin para gestionar la base por web.
-- Crear base de datos y tablas del proyecto (listas para backend FastAPI).
-- Dejar phpMyAdmin disponible para que puedas administrar la DB cuando quieras.
-- Entregar a tu equipo un SQL listo para importar.
+==================================================
+1) CONTEXTO
+==================================================
+Estado actual:
+- Base de datos: login_db (ya existe en el VPS)
+- Tabla existente: users (llamada `usuarios` antes, pero renombrada a `users`)
+- Falta agregar: 8 tablas más + índices + campo last_login
 
-Supuestos
-- VPS con Ubuntu 22.04 o 24.04 (si usas Debian es casi igual).
-- Tienes acceso SSH al servidor.
-- Tienes usuario con permisos sudo.
+Lo que haremos:
+- NO crearemos BD nueva ni Docker.
+- Nos conectaremos a la BD existente.
+- Ejecutaremos script SQL que agrega las tablas faltantes.
+- Verificaremos que todo esté completo.
 
---------------------------------------------------
-PASO 1) ENTRAR AL VPS Y ACTUALIZAR
---------------------------------------------------
-Desde tu PC:
-ssh TU_USUARIO@TU_IP_VPS
+==================================================
+2) PRE-REQUISITOS
+==================================================
+Acceso SSH al VPS:
+- Usuario con permisos sudo
+- IP del VPS
+- Usuario/contraseña de MySQL (root o usuario administrativo)
 
-En el VPS:
-sudo apt update
-sudo apt upgrade -y
+Verificar desde el VPS:
+```bash
+mysql --version
+mysql -h 127.0.0.1 -uroot -p -e "SHOW DATABASES;"
+```
 
---------------------------------------------------
-PASO 2) INSTALAR APACHE, MARIADB, PHP Y PHPMYADMIN
---------------------------------------------------
-Instala todo junto:
-sudo apt install -y apache2 mariadb-server php libapache2-mod-php php-mysql php-mbstring php-zip php-gd php-json php-curl phpmyadmin
+Debes ver login_db en la lista.
 
-Si durante la instalacion de phpMyAdmin te pregunta:
-- Web server: selecciona apache2.
-- Configurar base con dbconfig-common: selecciona Yes.
-- Define password para usuario interno de phpMyAdmin.
+==================================================
+3) CONECTARSE A LA BASE DE DATOS EXISTENTE
+==================================================
+Opcion A - Acceso local en el VPS:
+```bash
+mysql -u root -p login_db
+# Se abre prompt mysql> interactivo
+```
 
-Activa extension y reinicia Apache:
-sudo phpenmod mbstring
-sudo systemctl restart apache2
+Opcion B - Acceso remoto desde la laptop (recomendado vía SSH tunnel):
+```powershell
+# Windows - abre túnel SSH
+ssh -L 3306:127.0.0.1:3306 usuario@IP_VPS
 
-Comprueba servicios:
-sudo systemctl status apache2 --no-pager
-sudo systemctl status mariadb --no-pager
+# En otra terminal:
+mysql -h 127.0.0.1 -u root -p login_db
+```
 
---------------------------------------------------
-PASO 3) ASEGURAR MARIADB
---------------------------------------------------
-Ejecuta:
-sudo mysql_secure_installation
+Opcion C - Directamente en una línea (sin prompt interactivo):
+```bash
+mysql -h 127.0.0.1 -u root -p login_db -e "SHOW TABLES;"
+```
 
-Recomendado:
-- Cambiar password de root: Yes
-- Remove anonymous users: Yes
-- Disallow root login remotely: Yes
-- Remove test database: Yes
-- Reload privilege tables: Yes
+Esperado:
+```
+Tables_in_login_db
+users
+```
 
---------------------------------------------------
-PASO 4) CREAR BASE Y TABLA QUE USA TU APP
---------------------------------------------------
-Entra a MariaDB:
-sudo mysql -u root -p
+==================================================
+4) CREAR SCRIPT SQL CON TABLAS FALTANTES
+==================================================
+Archivo a crear en el VPS: /tmp/upgrade_login_db.sql
 
-Ejecuta este SQL (base lista para lo actual + crecimiento futuro):
-CREATE DATABASE IF NOT EXISTS login_db
-  CHARACTER SET utf8mb4
-  COLLATE utf8mb4_unicode_ci;
-USE login_db;
+Contenido del script (copia TODO esto):
 
--- Tabla principal de autenticacion (compatible con tu app actual).
-CREATE TABLE IF NOT EXISTS users (
-  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
-  role ENUM('Usuario','Empresa','Admin') NOT NULL,
-  username VARCHAR(50) NOT NULL,
-  password VARCHAR(255) NOT NULL,
-  email VARCHAR(120) NOT NULL,
-  display_name VARCHAR(120) NOT NULL,
-  programming_language VARCHAR(50) NULL,
-  age INT NULL,
-  password_hash VARCHAR(255) NULL,
-  is_active TINYINT(1) NOT NULL DEFAULT 1,
-  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
-  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
-  CONSTRAINT uq_users_username UNIQUE (username),
-  CONSTRAINT uq_users_email UNIQUE (email)
-);
+-- ========================================================
+-- IMPORTANTE: Antes de ejecutar, REVISA que la tabla
+-- users EXISTA. Si se llama "usuarios", renómbrala primero:
+-- RENAME TABLE usuarios TO users;
+-- ========================================================
 
--- Perfil extendido para ingenieros (usuario rol Usuario).
+-- Agregar campos faltantes a users si no existen
+ALTER TABLE users
+  ADD COLUMN IF NOT EXISTS password_hash VARCHAR(255) NULL,
+  ADD COLUMN IF NOT EXISTS is_active TINYINT(1) NOT NULL DEFAULT 1,
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  ADD COLUMN IF NOT EXISTS last_login DATETIME NULL;
+
+-- Agregar restricción UNIQUE si falta (puede fallar si duplicate, ignorar)
+ALTER TABLE users ADD CONSTRAINT uq_users_username UNIQUE (username);
+ALTER TABLE users ADD CONSTRAINT uq_users_email UNIQUE (email);
+
+-- Crear las 8 tablas nuevas
+
 CREATE TABLE IF NOT EXISTS engineer_profiles (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -105,7 +107,6 @@ CREATE TABLE IF NOT EXISTS engineer_profiles (
     REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Perfil extendido para empresas (usuario rol Empresa).
 CREATE TABLE IF NOT EXISTS company_profiles (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   user_id BIGINT UNSIGNED NOT NULL,
@@ -123,7 +124,6 @@ CREATE TABLE IF NOT EXISTS company_profiles (
     REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- CVs cargados por ingenieros.
 CREATE TABLE IF NOT EXISTS cv_documents (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   engineer_user_id BIGINT UNSIGNED NOT NULL,
@@ -134,11 +134,9 @@ CREATE TABLE IF NOT EXISTS cv_documents (
   parsed_skills JSON NULL,
   uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_cv_documents_engineer FOREIGN KEY (engineer_user_id)
-    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  INDEX idx_cv_documents_engineer_user_id (engineer_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Solicitudes de trabajo creadas por empresas.
 CREATE TABLE IF NOT EXISTS job_posts (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   company_user_id BIGINT UNSIGNED NOT NULL,
@@ -153,16 +151,14 @@ CREATE TABLE IF NOT EXISTS job_posts (
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
   CONSTRAINT fk_job_posts_company FOREIGN KEY (company_user_id)
-    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  INDEX idx_job_posts_company_user_id (company_user_id),
-  INDEX idx_job_posts_status (status)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Postulaciones de ingenieros a ofertas.
 CREATE TABLE IF NOT EXISTS applications (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   job_post_id BIGINT UNSIGNED NOT NULL,
   engineer_user_id BIGINT UNSIGNED NOT NULL,
+  company_user_id BIGINT UNSIGNED NULL,
   cv_document_id BIGINT UNSIGNED NULL,
   status ENUM('Postulada','EnRevision','Seleccionada','Rechazada') NOT NULL DEFAULT 'Postulada',
   applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -171,14 +167,13 @@ CREATE TABLE IF NOT EXISTS applications (
     REFERENCES job_posts(id) ON DELETE CASCADE ON UPDATE CASCADE,
   CONSTRAINT fk_applications_engineer FOREIGN KEY (engineer_user_id)
     REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_applications_company FOREIGN KEY (company_user_id)
+    REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
   CONSTRAINT fk_applications_cv FOREIGN KEY (cv_document_id)
     REFERENCES cv_documents(id) ON DELETE SET NULL ON UPDATE CASCADE,
-  CONSTRAINT uq_applications_job_engineer UNIQUE (job_post_id, engineer_user_id),
-  INDEX idx_applications_engineer_user_id (engineer_user_id),
-  INDEX idx_applications_status (status)
+  CONSTRAINT uq_applications_job_engineer UNIQUE (job_post_id, engineer_user_id)
 );
 
--- Resultado de analisis IA sobre cada postulacion.
 CREATE TABLE IF NOT EXISTS ai_evaluations (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   application_id BIGINT UNSIGNED NOT NULL,
@@ -190,12 +185,9 @@ CREATE TABLE IF NOT EXISTS ai_evaluations (
   raw_response LONGTEXT NULL,
   evaluated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_ai_evaluations_application FOREIGN KEY (application_id)
-    REFERENCES applications(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  INDEX idx_ai_evaluations_application_id (application_id),
-  INDEX idx_ai_evaluations_recommendation (recommendation)
+    REFERENCES applications(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Capacitaciones sugeridas por IA para cubrir brechas.
 CREATE TABLE IF NOT EXISTS training_recommendations (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   ai_evaluation_id BIGINT UNSIGNED NOT NULL,
@@ -206,11 +198,9 @@ CREATE TABLE IF NOT EXISTS training_recommendations (
   estimated_hours INT NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_training_recommendations_ai FOREIGN KEY (ai_evaluation_id)
-    REFERENCES ai_evaluations(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  INDEX idx_training_recommendations_ai_evaluation_id (ai_evaluation_id)
+    REFERENCES ai_evaluations(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Acciones administrativas (auditoria basica).
 CREATE TABLE IF NOT EXISTS admin_audit_logs (
   id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
   admin_user_id BIGINT UNSIGNED NOT NULL,
@@ -220,12 +210,209 @@ CREATE TABLE IF NOT EXISTS admin_audit_logs (
   details JSON NULL,
   created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
   CONSTRAINT fk_admin_audit_logs_admin FOREIGN KEY (admin_user_id)
-    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
-  INDEX idx_admin_audit_logs_admin_user_id (admin_user_id),
-  INDEX idx_admin_audit_logs_created_at (created_at)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
 );
 
--- Datos iniciales de prueba (compatibles con tu login actual).
+-- Crear índices (estado post-migración)
+CREATE INDEX IF NOT EXISTS idx_users_username ON users(username);
+CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
+CREATE INDEX IF NOT EXISTS idx_users_role ON users(role);
+
+CREATE INDEX IF NOT EXISTS idx_applications_engineer ON applications(engineer_user_id);
+CREATE INDEX IF NOT EXISTS idx_applications_job ON applications(job_post_id);
+CREATE INDEX IF NOT EXISTS idx_applications_company ON applications(company_user_id);
+CREATE INDEX IF NOT EXISTS idx_applications_status ON applications(status);
+
+CREATE INDEX IF NOT EXISTS idx_job_posts_company ON job_posts(company_user_id);
+CREATE INDEX IF NOT EXISTS idx_job_posts_status ON job_posts(status);
+
+CREATE INDEX IF NOT EXISTS idx_cv_documents_engineer ON cv_documents(engineer_user_id);
+CREATE INDEX IF NOT EXISTS idx_ai_evaluations_application ON ai_evaluations(application_id);
+CREATE INDEX IF NOT EXISTS idx_engineer_profiles_user ON engineer_profiles(user_id);
+CREATE INDEX IF NOT EXISTS idx_company_profiles_user ON company_profiles(user_id);
+
+-- Datos iniciales de prueba (crear perfiles si faltan)
+INSERT INTO engineer_profiles (user_id, first_name, last_name, years_experience, seniority)
+SELECT id, 'Usuario', 'Prueba', 2.0, 'Junior'
+FROM users WHERE username = 'user'
+  AND NOT EXISTS (SELECT 1 FROM engineer_profiles WHERE user_id = users.id);
+
+INSERT INTO company_profiles (user_id, company_name, industry, contact_name)
+SELECT id, 'Empresa Prueba', 'Software', 'Contacto Empresa'
+FROM users WHERE username = 'empresa'
+  AND NOT EXISTS (SELECT 1 FROM company_profiles WHERE user_id = users.id);
+
+-- FIN del script de migración
+
+Pega esto:
+
+CREATE DATABASE IF NOT EXISTS login_db
+  CHARACTER SET utf8mb4
+  COLLATE utf8mb4_unicode_ci;
+USE login_db;
+
+CREATE TABLE IF NOT EXISTS users (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  role ENUM('Usuario','Empresa','Admin') NOT NULL,
+  username VARCHAR(50) NOT NULL,
+  password VARCHAR(255) NOT NULL,
+  email VARCHAR(120) NOT NULL,
+  display_name VARCHAR(120) NOT NULL,
+  programming_language VARCHAR(50) NULL,
+  age INT NULL,
+  password_hash VARCHAR(255) NULL,
+  is_active TINYINT(1) NOT NULL DEFAULT 1,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  last_login DATETIME NULL,
+  CONSTRAINT uq_users_username UNIQUE (username),
+  CONSTRAINT uq_users_email UNIQUE (email)
+);
+
+CREATE TABLE IF NOT EXISTS engineer_profiles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  first_name VARCHAR(80) NOT NULL,
+  last_name VARCHAR(80) NOT NULL,
+  phone VARCHAR(30) NULL,
+  city VARCHAR(80) NULL,
+  country VARCHAR(80) NULL,
+  years_experience DECIMAL(4,1) NULL,
+  seniority ENUM('Trainee','Junior','SemiSenior','Senior','Lead') NULL,
+  linkedin_url VARCHAR(255) NULL,
+  github_url VARCHAR(255) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_engineer_profiles_user UNIQUE (user_id),
+  CONSTRAINT fk_engineer_profiles_user FOREIGN KEY (user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS company_profiles (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  user_id BIGINT UNSIGNED NOT NULL,
+  company_name VARCHAR(140) NOT NULL,
+  tax_id VARCHAR(40) NULL,
+  website VARCHAR(255) NULL,
+  industry VARCHAR(100) NULL,
+  company_size ENUM('1-10','11-50','51-200','201-500','500+') NULL,
+  contact_name VARCHAR(120) NULL,
+  contact_phone VARCHAR(30) NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT uq_company_profiles_user UNIQUE (user_id),
+  CONSTRAINT fk_company_profiles_user FOREIGN KEY (user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS cv_documents (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  engineer_user_id BIGINT UNSIGNED NOT NULL,
+  file_name VARCHAR(255) NOT NULL,
+  file_url VARCHAR(500) NOT NULL,
+  file_sha256 CHAR(64) NULL,
+  extracted_text MEDIUMTEXT NULL,
+  parsed_skills JSON NULL,
+  uploaded_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_cv_documents_engineer FOREIGN KEY (engineer_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS job_posts (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  company_user_id BIGINT UNSIGNED NOT NULL,
+  title VARCHAR(150) NOT NULL,
+  description MEDIUMTEXT NOT NULL,
+  required_skills JSON NULL,
+  min_years_experience DECIMAL(4,1) NULL,
+  location_mode ENUM('Remoto','Hibrido','Presencial') NOT NULL DEFAULT 'Remoto',
+  city VARCHAR(80) NULL,
+  country VARCHAR(80) NULL,
+  status ENUM('Abierta','Pausada','Cerrada') NOT NULL DEFAULT 'Abierta',
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_job_posts_company FOREIGN KEY (company_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS applications (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  job_post_id BIGINT UNSIGNED NOT NULL,
+  engineer_user_id BIGINT UNSIGNED NOT NULL,
+  company_user_id BIGINT UNSIGNED NULL,
+  cv_document_id BIGINT UNSIGNED NULL,
+  status ENUM('Postulada','EnRevision','Seleccionada','Rechazada') NOT NULL DEFAULT 'Postulada',
+  applied_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  updated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+  CONSTRAINT fk_applications_job_post FOREIGN KEY (job_post_id)
+    REFERENCES job_posts(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_applications_engineer FOREIGN KEY (engineer_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE,
+  CONSTRAINT fk_applications_company FOREIGN KEY (company_user_id)
+    REFERENCES users(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT fk_applications_cv FOREIGN KEY (cv_document_id)
+    REFERENCES cv_documents(id) ON DELETE SET NULL ON UPDATE CASCADE,
+  CONSTRAINT uq_applications_job_engineer UNIQUE (job_post_id, engineer_user_id)
+);
+
+CREATE TABLE IF NOT EXISTS ai_evaluations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  application_id BIGINT UNSIGNED NOT NULL,
+  model_name VARCHAR(80) NOT NULL,
+  score DECIMAL(5,2) NULL,
+  recommendation ENUM('NoRecomendada','RecomendadaConCapacitacion','Recomendada') NOT NULL,
+  missing_skills JSON NULL,
+  summary TEXT NULL,
+  raw_response LONGTEXT NULL,
+  evaluated_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_ai_evaluations_application FOREIGN KEY (application_id)
+    REFERENCES applications(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS training_recommendations (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  ai_evaluation_id BIGINT UNSIGNED NOT NULL,
+  skill_name VARCHAR(120) NOT NULL,
+  recommendation_text TEXT NOT NULL,
+  provider VARCHAR(120) NULL,
+  resource_url VARCHAR(500) NULL,
+  estimated_hours INT NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_training_recommendations_ai FOREIGN KEY (ai_evaluation_id)
+    REFERENCES ai_evaluations(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS admin_audit_logs (
+  id BIGINT UNSIGNED AUTO_INCREMENT PRIMARY KEY,
+  admin_user_id BIGINT UNSIGNED NOT NULL,
+  action VARCHAR(120) NOT NULL,
+  target_type VARCHAR(60) NULL,
+  target_id BIGINT UNSIGNED NULL,
+  details JSON NULL,
+  created_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  CONSTRAINT fk_admin_audit_logs_admin FOREIGN KEY (admin_user_id)
+    REFERENCES users(id) ON DELETE CASCADE ON UPDATE CASCADE
+);
+
+-- Índices esperados (estado post-migración)
+CREATE INDEX idx_users_username ON users(username);
+CREATE INDEX idx_users_email ON users(email);
+CREATE INDEX idx_users_role ON users(role);
+
+CREATE INDEX idx_applications_engineer ON applications(engineer_user_id);
+CREATE INDEX idx_applications_job ON applications(job_post_id);
+CREATE INDEX idx_applications_company ON applications(company_user_id);
+CREATE INDEX idx_applications_status ON applications(status);
+
+CREATE INDEX idx_job_posts_company ON job_posts(company_user_id);
+CREATE INDEX idx_job_posts_status ON job_posts(status);
+
+CREATE INDEX idx_cv_documents_engineer ON cv_documents(engineer_user_id);
+CREATE INDEX idx_ai_evaluations_application ON ai_evaluations(application_id);
+CREATE INDEX idx_engineer_profiles_user ON engineer_profiles(user_id);
+CREATE INDEX idx_company_profiles_user ON company_profiles(user_id);
+
+-- Datos iniciales de prueba
 INSERT INTO users (role, username, password, email, display_name, programming_language, age)
 VALUES
 ('Empresa', 'empresa', 'empresa123', 'empresa@empresa.com', 'Empresa Prueba', NULL, NULL),
@@ -233,7 +420,6 @@ VALUES
 ('Admin', 'admin', 'admin123', 'admin@plataforma.com', 'Administrador', NULL, NULL)
 ON DUPLICATE KEY UPDATE username = VALUES(username);
 
--- Inserta perfiles iniciales para que ya exista estructura por rol.
 INSERT INTO company_profiles (user_id, company_name, industry, contact_name)
 SELECT id, 'Empresa Prueba', 'Software', 'Contacto Empresa'
 FROM users WHERE username = 'empresa'
@@ -244,190 +430,234 @@ SELECT id, 'Usuario', 'Prueba', 2.0, 'Junior'
 FROM users WHERE username = 'user'
 ON DUPLICATE KEY UPDATE first_name = VALUES(first_name);
 
-Validaciones/peticiones recomendadas para backend futuro:
-1) Registro:
-   - username y email unicos.
-   - role solo Usuario, Empresa o Admin.
-   - Empresa requiere company_profiles.
-   - Usuario requiere engineer_profiles.
+==================================================
+5) EJECUTAR EL SCRIPT SQL EN LA BD EXISTENTE
+==================================================
 
-2) CV:
-   - solo Usuario puede subir a cv_documents.
-   - validar tamano, extension y hash duplicado.
+OPCION A - Desde el VPS localmente:
+```bash
+cd /tmp
+mysql -u root -p login_db < upgrade_login_db.sql
+# Se abrirá prompt pidiendo contraseña de root MySQL
+```
 
-3) Vacantes:
-   - solo Empresa puede crear/editar job_posts.
-   - no permitir editar vacante Cerrada salvo Admin.
+OPCION B - Desde la laptop (recomendado, con SSH tunnel):
+```powershell
+# Terminal 1: Abre túnel SSH
+ssh -L 3306:127.0.0.1:3306 usuario@IP_VPS
 
-4) Postulaciones:
-   - no duplicar (job_post_id, engineer_user_id).
-   - solo vacantes Abiertas aceptan postulacion.
+# Terminal 2: Ejecuta script
+mysql -h 127.0.0.1 -u root -p login_db < C:\ruta\a\upgrade_login_db.sql
+```
 
-5) IA:
-   - cada ai_evaluations debe apuntar a applications real.
-   - recommendation y score se guardan para trazabilidad.
+OPCION C - Copia el contenido directamente en MySQL:
+```bash
+mysql -u root -p login_db
+# Pega TODO el contenido del script anterior
+# Presiona Enter
+# Escribe: exit
+```
 
-6) Admin:
-   - toda accion sensible queda en admin_audit_logs.
+Resultado esperado:
+```
+Query OK, X rows affected
+Query OK, 0 rows affected
+...
+```
 
---------------------------------------------------
-PASO 5) CREAR USUARIOS MYSQL (TU ROL + EQUIPO BACKEND)
---------------------------------------------------
-Aun dentro de MariaDB, crea usuarios segun uso real:
+Si hay errores como "Duplicate entry", es normal si algunas tablas ya existen. Los CREATE TABLE IF NOT EXISTS evitan error fatal.
 
-1) Usuario para TI (administrar DB desde phpMyAdmin):
-CREATE USER 'dbadmin'@'localhost' IDENTIFIED BY 'cambia_esto_admin';
-GRANT ALL PRIVILEGES ON login_db.* TO 'dbadmin'@'localhost';
+==================================================
+6) VERIFICAR QUE LA MIGRACIÓN FUE EXITOSA
+==================================================
+Conectate a la BD y corre estos comandos:
 
-2) Usuario para el backend (FastAPI en el VPS):
-CREATE USER 'backend_app'@'localhost' IDENTIFIED BY 'cambia_esto_backend';
-GRANT SELECT, INSERT, UPDATE, DELETE ON login_db.* TO 'backend_app'@'localhost';
+Listar todas las tablas:
+```bash
+mysql -h 127.0.0.1 -u root -p login_db -e "SHOW TABLES;"
+```
 
+Esperado (9 tablas):
+```
+Tables_in_login_db
+users
+engineer_profiles
+company_profiles
+cv_documents
+job_posts
+applications
+ai_evaluations
+training_recommendations
+admin_audit_logs
+```
+
+Verificar estructura de users:
+```bash
+mysql -h 127.0.0.1 -u root -p login_db -e "DESCRIBE users;"
+```
+
+Debe incluir columnas nuevas: password_hash, is_active, created_at, updated_at, last_login
+
+Contar registros de cada tabla:
+```bash
+mysql -h 127.0.0.1 -u root -p login_db -e "SELECT COUNT(*) as count, 'users' as table_name FROM users UNION SELECT COUNT(*), 'engineer_profiles' FROM engineer_profiles UNION SELECT COUNT(*), 'company_profiles' FROM company_profiles UNION SELECT COUNT(*), 'applications' FROM applications UNION SELECT COUNT(*), 'job_posts' FROM job_posts UNION SELECT COUNT(*), 'ai_evaluations' FROM ai_evaluations UNION SELECT COUNT(*), 'training_recommendations' FROM training_recommendations UNION SELECT COUNT(*), 'admin_audit_logs' FROM admin_audit_logs UNION SELECT COUNT(*), 'cv_documents' FROM cv_documents;"
+```
+
+==================================================
+7) CONFIGURAR ACCESO PARA FASTAPI Y QT
+==================================================
+Usuarios recomendados:
+
+A) Para Qt (lectura y validación de login):
+```bash
+mysql -u root -p login_db -e "
+CREATE USER IF NOT EXISTS 'qtuser'@'127.0.0.1' IDENTIFIED BY 'qtpass';
+GRANT SELECT, INSERT ON login_db.users TO 'qtuser'@'127.0.0.1';
 FLUSH PRIVILEGES;
+"
+```
 
-Notas importantes:
-- Para tu caso actual NO necesitas usar tu IP publica de PC en MySQL.
-- Si FastAPI y MariaDB corren en el mismo VPS, localhost es lo correcto.
-- Solo usa 'usuario'@'X.X.X.X' o 'usuario'@'%' si realmente habra conexion remota.
+B) Para FastAPI (completo):
+```bash
+mysql -u root -p login_db -e "
+CREATE USER IF NOT EXISTS 'backend_app'@'127.0.0.1' IDENTIFIED BY 'backend_pass';
+GRANT SELECT, INSERT, UPDATE, DELETE ON login_db.* TO 'backend_app'@'127.0.0.1';
+FLUSH PRIVILEGES;
+"
+```
 
-Sal de MariaDB:
-EXIT;
+C) Para Admin (todas las operaciones):
+```bash
+mysql -u root -p login_db -e "
+CREATE USER IF NOT EXISTS 'dbadmin'@'127.0.0.1' IDENTIFIED BY 'admin_secure_pass';
+GRANT ALL PRIVILEGES ON login_db.* TO 'dbadmin'@'127.0.0.1';
+FLUSH PRIVILEGES;
+"
+```
 
---------------------------------------------------
-PASO 6) HABILITAR PHPMYADMIN EN APACHE
---------------------------------------------------
-Prueba en navegador:
-http://TU_IP_VPS/phpmyadmin
+Nota:
+- Si se necesita acceso remoto, reemplazar 127.0.0.1 por % (pero es menos seguro).
+- Si se necesita acceso SSH tunnel, seguir usando 127.0.0.1 (más seguro).
 
-Si no abre, enlaza config manualmente:
-sudo ln -s /etc/phpmyadmin/apache.conf /etc/apache2/conf-available/phpmyadmin.conf
-sudo a2enconf phpmyadmin
-sudo systemctl reload apache2
+==================================================
+8) VARIABLES DE ENTORNO PARA QT
+==================================================
+El Qt actual lee estos valores (ver databaseconfig.h):
 
---------------------------------------------------
-PASO 7) ASEGURAR PHPMYADMIN (MUY IMPORTANTE)
---------------------------------------------------
-1. Firewall basico:
-sudo ufw allow OpenSSH
-sudo ufw allow 80/tcp
-sudo ufw allow 443/tcp
-sudo ufw enable
+Variables esperadas:
+- LOGIN_DB_HOST (default: 127.0.0.1)
+- LOGIN_DB_PORT (default: 3306)
+- LOGIN_DB_NAME (default: login_db)
+- LOGIN_DB_USER (default: qtuser)
+- LOGIN_DB_PASSWORD (default: qtpass)
 
-2. Ideal: restringir acceso a phpMyAdmin por IP.
-Puedes agregar reglas en Apache para permitir solo tu IP.
+Configurar en el VPS:
+```bash
+export LOGIN_DB_HOST=127.0.0.1
+export LOGIN_DB_PORT=3306
+export LOGIN_DB_NAME=login_db
+export LOGIN_DB_USER=qtuser
+export LOGIN_DB_PASSWORD=qtpass
+```
 
-Si tu IP cambia seguido y quieres entrar siempre, usa esta alternativa:
-- Mantener acceso por HTTPS + password fuerte + autenticacion extra de Apache.
+Configurar en Windows (PowerShell):
+```powershell
+$env:LOGIN_DB_HOST = "127.0.0.1"
+$env:LOGIN_DB_PORT = "3306"
+$env:LOGIN_DB_NAME = "login_db"
+$env:LOGIN_DB_USER = "qtuser"
+$env:LOGIN_DB_PASSWORD = "qtpass"
+```
 
-Autenticacion extra (recomendada):
-sudo apt install -y apache2-utils
-sudo htpasswd -c /etc/phpmyadmin/.htpasswd tuusuarioadmin
+Para persistencia en Windows (una sola vez):
+```powershell
+[Environment]::SetEnvironmentVariable("LOGIN_DB_HOST", "127.0.0.1", "User")
+[Environment]::SetEnvironmentVariable("LOGIN_DB_USER", "qtuser", "User")
+# etc...
+```
 
-Edita /etc/phpmyadmin/apache.conf y dentro de <Directory /usr/share/phpmyadmin> agrega:
-AuthType Basic
-AuthName "Restricted phpMyAdmin"
-AuthUserFile /etc/phpmyadmin/.htpasswd
-Require valid-user
+==================================================
+9) DEJAR LISTO PARA FASTAPI
+==================================================
+Variables recomendadas para FastAPI:
+- LOGIN_DB_HOST=127.0.0.1
+- LOGIN_DB_PORT=3306
+- LOGIN_DB_NAME=login_db
+- LOGIN_DB_USER=backend_app
+- LOGIN_DB_PASSWORD=backend_pass (la que configuraste arriba)
 
-Aplica cambios:
-sudo systemctl reload apache2
+Arquitectura posterior:
+```
+Qt Desktop App
+    ↓
+[Nginx en 443]
+    ↓
+[FastAPI en localhost:8000]
+    ↓
+[MySQL en localhost:3306 (SIN exposición pública)]
+```
 
-3. HTTPS con Certbot (si tienes dominio):
-sudo apt install -y certbot python3-certbot-apache
-sudo certbot --apache -d tu-dominio.com
+Nginx y FastAPI pueden estar en el mismo VPS o en contenedores Docker.
+MySQL seguirá en el VPS sin exponerse públicamente.
 
-4. No expongas 3306 globalmente si no es necesario.
-Si puedes, usa tunel SSH para administrar DB y mantener 3306 cerrado.
+==================================================
+10) BACKUP Y RECUPERACIÓN
+==================================================
+Hacer backup de la BD actual:
+```bash
+mysqldump -u root -p login_db > login_db_backup_$(date +%F_%H%M%S).sql
+```
 
---------------------------------------------------
-PASO 8) (OPCIONAL) ABRIR MYSQL REMOTO
---------------------------------------------------
-Solo si algun servicio FUERA del VPS se conectara directo a MySQL.
-Si FastAPI correra en el mismo VPS, NO lo necesitas.
+Restaurar desde backup:
+```bash
+mysql -u root -p login_db < login_db_backup_2026-05-18_120000.sql
+```
 
-Edita:
-sudo nano /etc/mysql/mariadb.conf.d/50-server.cnf
+Backup de una sola tabla:
+```bash
+mysqldump -u root -p login_db users > users_backup_$(date +%F_%H%M%S).sql
+```
 
-Busca y cambia:
-bind-address = 127.0.0.1
-por
-bind-address = 0.0.0.0
+==================================================
+11) TROUBLESHOOTING
+==================================================
+A) "Access denied" al conectarse:
+   - Verifica USER y PASSWORD en mysql command.
+   - Revisa que el usuario tenga permisos con SHOW GRANTS FOR 'usuario'@'host';
 
-Reinicia MariaDB:
-sudo systemctl restart mariadb
+B) "Table 'login_db.users' doesn't exist":
+   - Si la tabla se llama "usuarios", renómbrala primero:
+     RENAME TABLE usuarios TO users;
+   - Luego ejecuta el script nuevamente.
 
-Firewall: permite 3306 solo desde tu IP de desarrollo (recomendado):
-sudo ufw allow from X.X.X.X to any port 3306 proto tcp
+C) "Duplicate entry for key":
+   - Significa que el script intentó crear algo que ya existe.
+   - Es normal con CREATE TABLE IF NOT EXISTS.
+   - Los datos existentes NO se pierden.
 
-Evita esta regla en produccion:
-sudo ufw allow 3306/tcp
+D) "Constraint Fails":
+   - Posible: datos en users que no encajan en la nueva estructura.
+   - Solución: revisar y corregir datos antes de guardar constraints.
 
---------------------------------------------------
-PASO 9) ENTREGA PARA EL EQUIPO (FASTAPI + NGINX)
---------------------------------------------------
-Verifica que la base y tablas existan:
-SHOW DATABASES;
-USE login_db;
-SHOW TABLES;
-SELECT COUNT(*) FROM users;
+E) Qt no puede conectarse:
+   - Verifica: mysql -h HOST -u USER -p PASS -e "SELECT 1"
+   - Verifica: variables de entorno están configuradas.
+   - Verifica: puerto 3306 está abierto entre cliente y VPS (SSH tunnel recomendado).
 
-Exporta SQL de entrega:
-mysqldump -u root -p login_db > login_db_entrega.sql
+==================================================
+12) CHECK FINAL
+==================================================
+Marcar como completado:
 
-Entrega al equipo:
-- Archivo: login_db_entrega.sql
-- Nombre DB: login_db
-- Usuario sugerido backend: backend_app@localhost
-- Lista de tablas principales: users, engineer_profiles, company_profiles,
-  cv_documents, job_posts, applications, ai_evaluations,
-  training_recommendations, admin_audit_logs
-
-Import en servidor destino (si lo necesitan):
-mysql -u root -p login_db < login_db_entrega.sql
-
---------------------------------------------------
-PASO 10) PRUEBA COMPLETA DESDE PHPMYADMIN
---------------------------------------------------
-1. Abre phpMyAdmin y verifica que existe login_db y tabla users.
-2. Revisa que todas las tablas nuevas existan.
-3. Ejecuta un SELECT simple en users y job_posts.
-4. Exporta login_db_entrega.sql y valida que el archivo no este vacio.
-
---------------------------------------------------
-SOLUCION DE PROBLEMAS
---------------------------------------------------
-A) Error en app: Driver not loaded / QMYSQL
-- Falta plugin QMYSQL compatible con tu version de Qt.
-- Instala/compila el plugin correspondiente a tu kit.
-
-Si no usaras Qt directo contra MySQL, puedes ignorar este punto.
-
-B) Error acceso denegado para backend_app o dbadmin
-- Revisa host permitido del usuario MySQL (localhost si corre en el VPS).
-- Revisa password y grants.
-
-C) phpMyAdmin no abre
-- Verifica Apache activo.
-- Verifica configuracion enlazada de phpMyAdmin.
-- Revisa firewall UFW (80/443).
-
-D) Timeout al conectar desde backend externo (si aplica)
-- Revisa si 3306 esta permitido desde el origen correcto.
-- Revisa bind-address.
-- Revisa reglas de firewall externo de Contabo si aplican.
-
-E) No puedes entrar siempre a phpMyAdmin
-- Usa dominio + HTTPS.
-- Si tu IP cambia, evita restriccion estricta por IP y usa autenticacion extra
-  con .htpasswd + password fuerte.
-- Mantiene 3306 cerrado si no hay necesidad de acceso remoto.
-
---------------------------------------------------
-RECOMENDACION FINAL DE SEGURIDAD
---------------------------------------------------
-Tu app actual guarda password en texto plano. Para produccion:
-- Usa hash de password (Argon2, bcrypt o PBKDF2).
-- Idealmente no conectes Qt directo a MySQL publica.
-- Usa API intermedia (backend) y DB privada.
+[ ] Base de datos login_db existe en el VPS
+[ ] Tabla users contiene datos anteriores (no borrados)
+[ ] 8 tablas nuevas creadas: engineer_profiles, company_profiles, cv_documents, job_posts, applications, ai_evaluations, training_recommendations, admin_audit_logs
+[ ] Todos los índices creados
+[ ] Campos faltantes agregados a users (password_hash, is_active, created_at, updated_at, last_login)
+[ ] Usuarios Qt y FastAPI creados con permisos correctos
+[ ] Variables de entorno configuradas en Windows
+[ ] Backup hecho y guardado en lugar seguro
+[ ] Qt se conecta y puede hacer login
+[ ] FastAPI lista para integración posterior
 
 FIN
