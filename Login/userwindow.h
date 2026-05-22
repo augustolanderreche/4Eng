@@ -22,9 +22,12 @@ public:
 
 private:
     void setupUi(const QString &displayName);
+    QWidget *createProfileTab();
     QWidget *createCvTab();
     QWidget *createJobsTab();
     QWidget *createApplicationsTab();
+    QWidget *createRequestsTab();
+    QWidget *createRecommendationsTab();
     QWidget *createChatTab();
     QFrame *createNotificationPopup();
     void showNotificationsPopup();

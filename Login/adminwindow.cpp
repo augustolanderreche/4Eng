@@ -2,14 +2,15 @@
 #include "empresawindow.h"
 #include "userwindow.h"
 
+#include <QAbstractItemView>
 #include <QHeaderView>
 #include <QHBoxLayout>
 #include <QLabel>
-#include <QLineEdit>
 #include <QListWidget>
 #include <QMessageBox>
 #include <QPushButton>
 #include <QTableWidget>
+#include <QTableWidgetItem>
 #include <QTabWidget>
 #include <QTextEdit>
 #include <QVBoxLayout>
@@ -37,6 +38,8 @@ void AdminWindow::setupUi(const QString &displayName)
     m_tabs->addTab(createCompaniesTab(), tr("Empresas"));
     m_tabs->addTab(createAcceptedTab(), tr("Aceptaciones"));
     m_tabs->addTab(createIaTab(), tr("Gestión IA"));
+    m_tabs->addTab(createAuditTab(), tr("Auditoría"));
+    m_tabs->addTab(createSystemTab(), tr("Sistema"));
 
     layout->addWidget(m_welcomeLabel);
     layout->addWidget(m_tabs);
@@ -44,7 +47,7 @@ void AdminWindow::setupUi(const QString &displayName)
     layout->setSpacing(12);
 
     setWindowTitle(tr("Panel admin"));
-    resize(1100, 740);
+    resize(1180, 780);
 }
 
 QWidget *AdminWindow::createDashboardTab()
@@ -52,20 +55,24 @@ QWidget *AdminWindow::createDashboardTab()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    auto *stats = new QTableWidget(4, 2, page);
+    auto *stats = new QTableWidget(6, 2, page);
     stats->setHorizontalHeaderLabels({tr("Métrica"), tr("Valor")});
     stats->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     stats->verticalHeader()->setVisible(false);
     stats->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
     stats->setItem(0, 0, new QTableWidgetItem("Usuarios registrados"));
-    stats->setItem(0, 1, new QTableWidgetItem("128"));
+    stats->setItem(0, 1, new QTableWidgetItem("5"));
     stats->setItem(1, 0, new QTableWidgetItem("Empresas registradas"));
-    stats->setItem(1, 1, new QTableWidgetItem("23"));
+    stats->setItem(1, 1, new QTableWidgetItem("1"));
     stats->setItem(2, 0, new QTableWidgetItem("Usuarios online"));
-    stats->setItem(2, 1, new QTableWidgetItem("17"));
-    stats->setItem(3, 0, new QTableWidgetItem("Solicitudes aceptadas (30 días)"));
-    stats->setItem(3, 1, new QTableWidgetItem("42"));
+    stats->setItem(2, 1, new QTableWidgetItem("2"));
+    stats->setItem(3, 0, new QTableWidgetItem("CVs cargados"));
+    stats->setItem(3, 1, new QTableWidgetItem("3"));
+    stats->setItem(4, 0, new QTableWidgetItem("Postulaciones activas"));
+    stats->setItem(4, 1, new QTableWidgetItem("3"));
+    stats->setItem(5, 0, new QTableWidgetItem("Candidatos seleccionados"));
+    stats->setItem(5, 1, new QTableWidgetItem("1"));
 
     auto *switchRow = new QHBoxLayout;
     auto *userModeButton = new QPushButton(tr("Ver modo Usuario"), page);
@@ -75,17 +82,17 @@ QWidget *AdminWindow::createDashboardTab()
     connect(userModeButton, &QPushButton::clicked, this, [this]() {
         auto *userWindow = new UserWindow("Vista desde Admin");
         userWindow->setAttribute(Qt::WA_DeleteOnClose);
-        connect(userWindow, &QObject::destroyed, this, [this]() { this->show(); });
+        connect(userWindow, &QObject::destroyed, this, [this]() { show(); });
         userWindow->show();
-        this->hide();
+        hide();
     });
 
     connect(empresaModeButton, &QPushButton::clicked, this, [this]() {
         auto *empresaWindow = new EmpresaWindow("Vista desde Admin");
         empresaWindow->setAttribute(Qt::WA_DeleteOnClose);
-        connect(empresaWindow, &QObject::destroyed, this, [this]() { this->show(); });
+        connect(empresaWindow, &QObject::destroyed, this, [this]() { show(); });
         empresaWindow->show();
-        this->hide();
+        hide();
     });
 
     connect(adminModeButton, &QPushButton::clicked, this, [this]() {
@@ -107,32 +114,38 @@ QWidget *AdminWindow::createUsersTab()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    auto *table = new QTableWidget(3, 6, page);
-    table->setHorizontalHeaderLabels({tr("ID"), tr("Usuario"), tr("Rol"), tr("Online"), tr("Último acceso"), tr("CV")});
+    auto *table = new QTableWidget(3, 8, page);
+    table->setHorizontalHeaderLabels({tr("ID"), tr("Usuario"), tr("Nombre"), tr("Rol"), tr("Online"), tr("Último acceso"), tr("CV"), tr("Skills")});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->verticalHeader()->setVisible(false);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    table->setItem(0, 0, new QTableWidgetItem("1"));
+    table->setItem(0, 0, new QTableWidgetItem("3"));
     table->setItem(0, 1, new QTableWidgetItem("user_demo"));
-    table->setItem(0, 2, new QTableWidgetItem("Usuario"));
-    table->setItem(0, 3, new QTableWidgetItem("Sí"));
-    table->setItem(0, 4, new QTableWidgetItem("Hoy 11:05"));
-    table->setItem(0, 5, new QTableWidgetItem("cv_backend_junior.pdf"));
+    table->setItem(0, 2, new QTableWidgetItem("Usuario Demo"));
+    table->setItem(0, 3, new QTableWidgetItem("Usuario"));
+    table->setItem(0, 4, new QTableWidgetItem("No"));
+    table->setItem(0, 5, new QTableWidgetItem("Sin login reciente"));
+    table->setItem(0, 6, new QTableWidgetItem("cv_fullstack_2026.pdf"));
+    table->setItem(0, 7, new QTableWidgetItem("Python, SQL"));
 
-    table->setItem(1, 0, new QTableWidgetItem("2"));
+    table->setItem(1, 0, new QTableWidgetItem("4"));
     table->setItem(1, 1, new QTableWidgetItem("sofia_dev"));
-    table->setItem(1, 2, new QTableWidgetItem("Usuario"));
-    table->setItem(1, 3, new QTableWidgetItem("No"));
-    table->setItem(1, 4, new QTableWidgetItem("Hoy 09:40"));
-    table->setItem(1, 5, new QTableWidgetItem("cv_sofia_2026.pdf"));
+    table->setItem(1, 2, new QTableWidgetItem("Sofia Diaz"));
+    table->setItem(1, 3, new QTableWidgetItem("Usuario"));
+    table->setItem(1, 4, new QTableWidgetItem("Sí"));
+    table->setItem(1, 5, new QTableWidgetItem("NOW()"));
+    table->setItem(1, 6, new QTableWidgetItem("cv_backend_python.pdf"));
+    table->setItem(1, 7, new QTableWidgetItem("Python, FastAPI, SQL"));
 
-    table->setItem(2, 0, new QTableWidgetItem("3"));
+    table->setItem(2, 0, new QTableWidgetItem("5"));
     table->setItem(2, 1, new QTableWidgetItem("marcos_cpp"));
-    table->setItem(2, 2, new QTableWidgetItem("Usuario"));
-    table->setItem(2, 3, new QTableWidgetItem("Sí"));
-    table->setItem(2, 4, new QTableWidgetItem("Hoy 11:10"));
-    table->setItem(2, 5, new QTableWidgetItem("cv_marcos_qt.pdf"));
+    table->setItem(2, 2, new QTableWidgetItem("Marcos Gomez"));
+    table->setItem(2, 3, new QTableWidgetItem("Usuario"));
+    table->setItem(2, 4, new QTableWidgetItem("Sí"));
+    table->setItem(2, 5, new QTableWidgetItem("NOW()"));
+    table->setItem(2, 6, new QTableWidgetItem("cv_cpp_qt.pdf"));
+    table->setItem(2, 7, new QTableWidgetItem("C++, Qt"));
 
     auto *buttonRow = new QHBoxLayout;
     auto *viewInfo = new QPushButton(tr("Ver info"), page);
@@ -145,12 +158,14 @@ QWidget *AdminWindow::createUsersTab()
             QMessageBox::information(this, tr("Usuarios"), tr("Selecciona un usuario ingeniero."));
             return;
         }
-        const QString info = tr("Usuario: %1\nRol: %2\nOnline: %3\nÚltimo acceso: %4\nCV: %5")
+        const QString info = tr("Usuario: %1\nNombre: %2\nRol: %3\nOnline: %4\nÚltimo acceso: %5\nCV: %6\nSkills: %7")
                                  .arg(table->item(row, 1)->text(),
                                       table->item(row, 2)->text(),
                                       table->item(row, 3)->text(),
                                       table->item(row, 4)->text(),
-                                      table->item(row, 5)->text());
+                                      table->item(row, 5)->text(),
+                                      table->item(row, 6)->text(),
+                                      table->item(row, 7)->text());
         QMessageBox::information(this, tr("Info usuario"), info);
     });
 
@@ -161,7 +176,7 @@ QWidget *AdminWindow::createUsersTab()
         }
         const QString username = table->item(row, 1)->text();
         table->removeRow(row);
-        QMessageBox::information(this, tr("Usuarios"), tr("Usuario %1 eliminado.").arg(username));
+        QMessageBox::information(this, tr("Usuarios"), tr("Usuario %1 eliminado en modo mock.").arg(username));
     });
 
     connect(toggleStatus, &QPushButton::clicked, this, [this, table]() {
@@ -169,7 +184,7 @@ QWidget *AdminWindow::createUsersTab()
         if (row < 0) {
             return;
         }
-        QTableWidgetItem *statusItem = table->item(row, 3);
+        QTableWidgetItem *statusItem = table->item(row, 4);
         statusItem->setText(statusItem->text() == "Sí" ? "No" : "Sí");
     });
 
@@ -188,26 +203,18 @@ QWidget *AdminWindow::createCompaniesTab()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    auto *table = new QTableWidget(3, 4, page);
-    table->setHorizontalHeaderLabels({tr("ID"), tr("Empresa"), tr("Contacto"), tr("Publicaciones activas")});
+    auto *table = new QTableWidget(1, 6, page);
+    table->setHorizontalHeaderLabels({tr("ID"), tr("Empresa"), tr("Industria"), tr("Contacto"), tr("Tamaño"), tr("Publicaciones")});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->verticalHeader()->setVisible(false);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    table->setItem(0, 0, new QTableWidgetItem("12"));
-    table->setItem(0, 1, new QTableWidgetItem("TechNova"));
-    table->setItem(0, 2, new QTableWidgetItem("hr@technova.com"));
-    table->setItem(0, 3, new QTableWidgetItem("3"));
-
-    table->setItem(1, 0, new QTableWidgetItem("15"));
-    table->setItem(1, 1, new QTableWidgetItem("Blue Systems"));
-    table->setItem(1, 2, new QTableWidgetItem("jobs@bluesystems.com"));
-    table->setItem(1, 3, new QTableWidgetItem("2"));
-
-    table->setItem(2, 0, new QTableWidgetItem("18"));
-    table->setItem(2, 1, new QTableWidgetItem("CloudWare"));
-    table->setItem(2, 2, new QTableWidgetItem("talent@cloudware.io"));
-    table->setItem(2, 3, new QTableWidgetItem("1"));
+    table->setItem(0, 0, new QTableWidgetItem("2"));
+    table->setItem(0, 1, new QTableWidgetItem("Empresa Demo"));
+    table->setItem(0, 2, new QTableWidgetItem("Software / Tecnología"));
+    table->setItem(0, 3, new QTableWidgetItem("Responsable RRHH"));
+    table->setItem(0, 4, new QTableWidgetItem("11-50"));
+    table->setItem(0, 5, new QTableWidgetItem("2 activas, 1 pausada"));
 
     auto *buttonRow = new QHBoxLayout;
     auto *viewDetail = new QPushButton(tr("Ver detalle"), page);
@@ -221,10 +228,12 @@ QWidget *AdminWindow::createCompaniesTab()
         }
         QMessageBox::information(this,
                                  tr("Detalle empresa"),
-                                 tr("Empresa: %1\nContacto: %2\nPublicaciones activas: %3")
+                                 tr("Empresa: %1\nIndustria: %2\nContacto: %3\nTamaño: %4\nPublicaciones: %5")
                                      .arg(table->item(row, 1)->text(),
                                           table->item(row, 2)->text(),
-                                          table->item(row, 3)->text()));
+                                          table->item(row, 3)->text(),
+                                          table->item(row, 4)->text(),
+                                          table->item(row, 5)->text()));
     });
 
     connect(deleteCompany, &QPushButton::clicked, this, [this, table]() {
@@ -234,7 +243,7 @@ QWidget *AdminWindow::createCompaniesTab()
         }
         const QString companyName = table->item(row, 1)->text();
         table->removeRow(row);
-        QMessageBox::information(this, tr("Empresas"), tr("Empresa %1 eliminada.").arg(companyName));
+        QMessageBox::information(this, tr("Empresas"), tr("Empresa %1 eliminada en modo mock.").arg(companyName));
     });
 
     buttonRow->addWidget(viewDetail);
@@ -251,31 +260,16 @@ QWidget *AdminWindow::createAcceptedTab()
     auto *page = new QWidget;
     auto *layout = new QVBoxLayout(page);
 
-    auto *table = new QTableWidget(4, 4, page);
+    auto *table = new QTableWidget(1, 4, page);
     table->setHorizontalHeaderLabels({tr("Empresa"), tr("Puesto"), tr("Usuario aceptado"), tr("Fecha")});
     table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
     table->verticalHeader()->setVisible(false);
     table->setEditTriggers(QAbstractItemView::NoEditTriggers);
 
-    table->setItem(0, 0, new QTableWidgetItem("Blue Systems"));
-    table->setItem(0, 1, new QTableWidgetItem("C++ Qt Developer"));
-    table->setItem(0, 2, new QTableWidgetItem("Marcos Gomez"));
-    table->setItem(0, 3, new QTableWidgetItem("2026-05-17"));
-
-    table->setItem(1, 0, new QTableWidgetItem("TechNova"));
-    table->setItem(1, 1, new QTableWidgetItem("Backend Python"));
-    table->setItem(1, 2, new QTableWidgetItem("Sofia Diaz"));
-    table->setItem(1, 3, new QTableWidgetItem("2026-05-16"));
-
-    table->setItem(2, 0, new QTableWidgetItem("DataLoop"));
-    table->setItem(2, 1, new QTableWidgetItem("Data Analyst"));
-    table->setItem(2, 2, new QTableWidgetItem("Lucia Ruiz"));
-    table->setItem(2, 3, new QTableWidgetItem("2026-05-14"));
-
-    table->setItem(3, 0, new QTableWidgetItem("CloudWare"));
-    table->setItem(3, 1, new QTableWidgetItem("DevOps Jr"));
-    table->setItem(3, 2, new QTableWidgetItem("Nicolas Vera"));
-    table->setItem(3, 3, new QTableWidgetItem("2026-05-13"));
+    table->setItem(0, 0, new QTableWidgetItem("Empresa Demo"));
+    table->setItem(0, 1, new QTableWidgetItem("Backend Python"));
+    table->setItem(0, 2, new QTableWidgetItem("Sofia Diaz"));
+    table->setItem(0, 3, new QTableWidgetItem("2026-05-21"));
 
     layout->addWidget(new QLabel(tr("Solicitudes aceptadas por empresas"), page));
     layout->addWidget(table);
@@ -292,9 +286,13 @@ QWidget *AdminWindow::createIaTab()
     settings->addItem("Modo resumen CV: habilitado");
     settings->addItem("Modo chat soporte: habilitado");
     settings->addItem("Temperatura: 0.3");
+    settings->addItem("Prompt CV Summary: activo");
+    settings->addItem("Prompt Job Match: activo");
 
     auto *prompt = new QTextEdit(page);
-    prompt->setPlainText("Prompt de resumen CV por vacante:\nResume fortalezas, gaps y recomendacion final para la empresa.");
+    prompt->setPlainText(
+        "PROMPT_CV_SUMMARY:\nResume fortalezas, gaps y recomendacion final para el CV.\n\n"
+        "PROMPT_JOB_MATCH:\nCompara el CV contra el puesto y devuelve score, fortalezas y skills faltantes.");
 
     auto *row = new QHBoxLayout;
     auto *saveConfig = new QPushButton(tr("Guardar configuración"), page);
@@ -302,7 +300,7 @@ QWidget *AdminWindow::createIaTab()
     auto *viewLogs = new QPushButton(tr("Ver logs IA"), page);
 
     connect(saveConfig, &QPushButton::clicked, this, [this]() {
-        QMessageBox::information(this, tr("IA"), tr("Configuración de IA guardada correctamente."));
+        QMessageBox::information(this, tr("IA"), tr("Configuración de IA guardada correctamente en modo demo."));
     });
 
     connect(testSummary, &QPushButton::clicked, this, [this]() {
@@ -314,7 +312,7 @@ QWidget *AdminWindow::createIaTab()
     connect(viewLogs, &QPushButton::clicked, this, [this]() {
         QMessageBox::information(this,
                                  tr("IA - Logs"),
-                                 tr("2026-05-18 10:20: resumen_cv OK\n2026-05-18 10:25: chat_response OK\n2026-05-18 10:31: recommendation OK"));
+                                 tr("2026-05-21 10:20: cv_summary OK\n2026-05-21 10:25: chat_response OK\n2026-05-21 10:31: recommendation OK"));
     });
 
     row->addWidget(saveConfig);
@@ -325,6 +323,100 @@ QWidget *AdminWindow::createIaTab()
     layout->addWidget(settings);
     layout->addWidget(new QLabel(tr("Prompt activo"), page));
     layout->addWidget(prompt);
+    layout->addLayout(row);
+    return page;
+}
+
+QWidget *AdminWindow::createAuditTab()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+
+    auto *table = new QTableWidget(4, 5, page);
+    table->setHorizontalHeaderLabels({tr("Fecha"), tr("Admin"), tr("Acción"), tr("Target"), tr("Detalle")});
+    table->horizontalHeader()->setSectionResizeMode(QHeaderView::Stretch);
+    table->verticalHeader()->setVisible(false);
+    table->setEditTriggers(QAbstractItemView::NoEditTriggers);
+
+    table->setItem(0, 0, new QTableWidgetItem("2026-05-21 10:20"));
+    table->setItem(0, 1, new QTableWidgetItem("admin_demo"));
+    table->setItem(0, 2, new QTableWidgetItem("DATABASE_INITIALIZED"));
+    table->setItem(0, 3, new QTableWidgetItem("DATABASE"));
+    table->setItem(0, 4, new QTableWidgetItem("final-v1"));
+
+    table->setItem(1, 0, new QTableWidgetItem("2026-05-21 10:35"));
+    table->setItem(1, 1, new QTableWidgetItem("admin_demo"));
+    table->setItem(1, 2, new QTableWidgetItem("VIEW_USER_PROFILE"));
+    table->setItem(1, 3, new QTableWidgetItem("USER 4"));
+    table->setItem(1, 4, new QTableWidgetItem("Sofia Diaz"));
+
+    table->setItem(2, 0, new QTableWidgetItem("2026-05-21 10:42"));
+    table->setItem(2, 1, new QTableWidgetItem("admin_demo"));
+    table->setItem(2, 2, new QTableWidgetItem("UPDATE_AI_SETTING"));
+    table->setItem(2, 3, new QTableWidgetItem("AI_MODEL_ACTIVE"));
+    table->setItem(2, 4, new QTableWidgetItem("gpt-4.1-mini"));
+
+    table->setItem(3, 0, new QTableWidgetItem("2026-05-21 10:55"));
+    table->setItem(3, 1, new QTableWidgetItem("admin_demo"));
+    table->setItem(3, 2, new QTableWidgetItem("REVIEW_APPLICATION"));
+    table->setItem(3, 3, new QTableWidgetItem("APPLICATION 2"));
+    table->setItem(3, 4, new QTableWidgetItem("En revisión"));
+
+    auto *row = new QHBoxLayout;
+    auto *refresh = new QPushButton(tr("Refrescar logs"), page);
+    auto *exportLogs = new QPushButton(tr("Exportar auditoría"), page);
+    connect(refresh, &QPushButton::clicked, this, [this]() {
+        QMessageBox::information(this, tr("Auditoría"), tr("Logs refrescados en modo mock."));
+    });
+    connect(exportLogs, &QPushButton::clicked, this, [this]() {
+        QMessageBox::information(this, tr("Auditoría"), tr("Exportación simulada de admin_audit_logs completada."));
+    });
+    row->addWidget(refresh);
+    row->addWidget(exportLogs);
+
+    layout->addWidget(new QLabel(tr("Auditoría administrativa"), page));
+    layout->addWidget(table);
+    layout->addLayout(row);
+    return page;
+}
+
+QWidget *AdminWindow::createSystemTab()
+{
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+
+    auto *statusList = new QListWidget(page);
+    statusList->addItem("Auth mock activo: Sí");
+    statusList->addItem("DB nueva usada por UI: No");
+    statusList->addItem("Chat IA UI: Completo en modo demo");
+    statusList->addItem("Notificaciones UI: Completo en modo demo");
+    statusList->addItem("Límite de admins esperado por backend: 3");
+    statusList->addItem("Polling sugerido para notificaciones: 10/15 segundos");
+
+    auto *notes = new QTextEdit(page);
+    notes->setReadOnly(true);
+    notes->setPlainText(
+        "Contexto del front actual:\n"
+        "- Login y registro siguen siendo mock/legacy.\n"
+        "- Usuario, Empresa y Admin ya cubren el flujo visual completo que exige la base final.\n"
+        "- Falta únicamente conectar los datos reales y reemplazar los hardcodeos cuando se migre a FastAPI.");
+
+    auto *row = new QHBoxLayout;
+    auto *toggleDemo = new QPushButton(tr("Ver estado demo"), page);
+    auto *reviewScope = new QPushButton(tr("Revisar alcance"), page);
+    connect(toggleDemo, &QPushButton::clicked, this, [this]() {
+        QMessageBox::information(this, tr("Sistema"), tr("El sistema sigue operando en modo front completo + datos demo hardcodeados."));
+    });
+    connect(reviewScope, &QPushButton::clicked, this, [this]() {
+        QMessageBox::information(this, tr("Sistema"), tr("El alcance actual cubre perfiles, CVs, vacantes, postulaciones, solicitudes, IA, notificaciones y auditoría a nivel visual."));
+    });
+    row->addWidget(toggleDemo);
+    row->addWidget(reviewScope);
+
+    layout->addWidget(new QLabel(tr("Estado del sistema"), page));
+    layout->addWidget(statusList);
+    layout->addWidget(new QLabel(tr("Notas de operación"), page));
+    layout->addWidget(notes);
     layout->addLayout(row);
     return page;
 }

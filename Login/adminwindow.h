@@ -20,6 +20,8 @@ private:
     QWidget *createCompaniesTab();
     QWidget *createAcceptedTab();
     QWidget *createIaTab();
+    QWidget *createAuditTab();
+    QWidget *createSystemTab();
 
     QLabel *m_welcomeLabel;
     QTabWidget *m_tabs;

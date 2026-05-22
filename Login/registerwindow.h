@@ -24,13 +24,22 @@ private slots:
 private:
     void setupUi();
     bool userExists(const QString &username);
-    bool createUserRecord(const QString &role,
-                          const QString &username,
-                          const QString &password,
-                          const QString &email,
-                          const QString &displayName,
-                          const QString &programmingLanguage = QString(),
-                          int age = 0);
+    bool createEmpresaRecord(const QString &username,
+                             const QString &password,
+                             const QString &email,
+                             const QString &displayName,
+                             const QString &companyName,
+                             const QString &contactPhone);
+    bool createEngineerRecord(const QString &username,
+                              const QString &password,
+                              const QString &email,
+                              const QString &displayName,
+                              const QString &firstName,
+                              const QString &lastName,
+                              int age,
+                              const QString &phone,
+                              const QString &country,
+                              const QString &programmingLanguage);
 
     QSqlDatabase m_db;
     QLabel *m_statusLabel;
@@ -39,6 +48,8 @@ private:
     QLineEdit *m_empresaUserEdit;
     QLineEdit *m_empresaPassEdit;
     QLineEdit *m_empresaEmailEdit;
+    QLineEdit *m_empresaNameEdit;
+    QLineEdit *m_empresaContactPhoneEdit;
     QPushButton *m_empresaRegisterButton;
 
     QLineEdit *m_userFirstNameEdit;
@@ -48,6 +59,8 @@ private:
     QComboBox *m_userLanguageCombo;
     QLineEdit *m_userEmailEdit;
     QLineEdit *m_userAgeEdit;
+    QLineEdit *m_userPhoneEdit;
+    QLineEdit *m_userCountryEdit;
     QPushButton *m_userRegisterButton;
 };
 

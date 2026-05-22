@@ -19,6 +19,7 @@ public:
 
 private:
     void setupUi(const QString &displayName);
+    QWidget *createPerfilPage();
     QWidget *createPublicacionesPage();
     QWidget *createPostulacionesPage();
     QWidget *createCvsPage();

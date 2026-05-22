@@ -1,5 +1,5 @@
 PROJECT: 4eng-Login
-LAST UPDATED: 2026-05-18
+LAST UPDATED: 2026-05-21
 STACK: Qt Widgets + Qt SQL (QMYSQL + QSQLITE) + C++17 + qmake
 WORKSPACE ROOT: c:\Users\aland\4Eng\Login
 OS (CURRENT DEV MACHINE): Windows
@@ -8,11 +8,12 @@ OS (CURRENT DEV MACHINE): Windows
 1) QUICK SUMMARY
 ==================================================
 Desktop app con login por roles (Usuario, Empresa, Admin).
-Actualmente el proyecto tiene:
-- Flujo de login real por BD (si QMYSQL esta disponible)
-- Cuentas demo hardcodeadas para test UI
-- Pantallas de Usuario, Empresa y Admin muy avanzadas en UX
-- Muchas acciones UI funcionales en modo mock
+
+ESTADO ACTUAL IMPORTANTE:
+- El front fue ampliado para cubrir visualmente casi todo lo que exige la base final `vps-poo`.
+- TODAVIA NO se usa la base nueva para la UI real.
+- La app sigue en modo mock/hardcodeado para navegacion, datos y acciones visuales.
+- El objetivo actual fue dejar el front completo y coherente con el SQL final para luego conectar backend/API.
 
 Cuentas demo activas:
 - user_demo / user123
@@ -80,38 +81,118 @@ MainWindow:
 - Soporta cuentas demo hardcodeadas para QA visual.
 
 RegisterWindow:
-- Registro Empresa/Usuario (estructura actual de proyecto).
+- Registro adaptado al esquema simplificado ejecutado en `vps-poo`.
+- Empresa (campos activos):
+  - company_name
+  - username
+  - email
+  - password
+  - contact_phone
+- Usuario (campos activos):
+  - first_name
+  - last_name
+  - username
+  - email
+  - password
+  - age
+  - phone
+  - country
+  - main_programming_language
+- Persistencia actual del registro:
+  - Inserta en `users` usando `password_hash` (sin hash real en esta fase mock).
+  - Inserta perfil en `company_profiles` o `engineer_profiles` según rol.
 
-UserWindow (redisenada):
+UserWindow (redisenada y completada):
 - Menu lateral izquierdo fijo.
 - Estilo dark + gama violeta.
-- Secciones:
+- Secciones actuales:
+  - Perfil
   - CV
   - Puestos
+  - Postulaciones
   - Solicitudes
+  - IA y capacitación
   - Chat IA
 - Notificaciones por campana (popup).
-- Botones funcionales en modo mock.
+- Ahora refleja visualmente estas areas de la base final:
+  - engineer_profiles
+  - cv_documents
+  - cv_ai_summaries
+  - applications
+  - company_candidate_requests
+  - user_job_recommendations
+  - training_recommendations
+  - notifications
 
-EmpresaWindow (redisenada):
-- Misma estructura de navegacion que UserWindow.
+EmpresaWindow (redisenada y completada):
+- Misma estructura general que UserWindow.
 - Estilo dark + gama azul.
-- Secciones:
+- Secciones actuales:
+  - Perfil
   - Publicaciones
   - Postulaciones
   - CVs
   - Solicitudes
   - Chat IA
-- Incluye pantalla "Nueva publicacion" con formulario.
-- Botones funcionales en modo mock.
+- Incluye pantalla "Nueva publicación" con formulario más completo.
+- Ahora refleja visualmente estas areas de la base final:
+  - company_profiles
+  - job_posts
+  - job_post_skills (representado mock en skills requeridas/deseables)
+  - applications
+  - ai_evaluations
+  - cv_documents
+  - cv_ai_summaries
+  - company_candidate_requests
 
-AdminWindow:
-- Tabs de dashboard, usuarios, empresas, aceptaciones, gestion IA.
-- Puede abrir vista de Usuario y Empresa para test.
-- Seccion usuarios enfocada en ingenieros.
+AdminWindow (ampliada):
+- Tabs actuales:
+  - Dashboard
+  - Usuarios
+  - Empresas
+  - Aceptaciones
+  - Gestión IA
+  - Auditoría
+  - Sistema
+- Puede abrir vista de Usuario y Empresa para test visual.
+- Ahora refleja visualmente estas areas de la base final:
+  - users
+  - company_profiles
+  - engineer_profiles
+  - applications
+  - admin_ai_settings
+  - admin_audit_logs
 
 ==================================================
-5) DATABASE CONNECTION MODEL
+5) DATA MODEL REFERENCE FOR THE MOCK FRONT
+==================================================
+La referencia de contenido visual usada para completar el front fue el SQL final y su variante simplificada `vps-poo-init-simplificado-bcrypt.sql`.
+
+Datos demo relevantes de esa base:
+- users: 5 registros
+- company_profiles: 1 empresa demo
+- engineer_profiles: 3 perfiles de usuario
+- skills: 12 skills base
+- user_skills: skills cargadas para usuarios demo
+- job_posts: 3 vacantes
+- cv_documents: 3 CVs
+- cv_ai_summaries: 3 resúmenes IA de CV
+- applications: 3 postulaciones
+- application_status_history: historial de cambios
+- ai_evaluations: 3 evaluaciones IA
+- user_job_recommendations: 3 recomendaciones de vacantes
+- company_candidate_requests: 3 solicitudes empresa -> candidato
+- notifications: 3 notificaciones demo
+- ai_conversations / ai_messages: chat demo usuario/empresa
+- admin_ai_settings: settings demo de IA
+- admin_audit_logs: log demo de auditoría
+
+IMPORTANTE:
+- La UI nueva no consulta todavía esas tablas para la mayoría de pantallas.
+- El registro sí fue alineado al esquema simplificado para evitar errores SQL por columnas eliminadas.
+
+==================================================
+6) DATABASE CONNECTION MODEL
 ==================================================
 VPS MySQL:
 - Via databaseconfig.h
@@ -127,38 +208,44 @@ SQLite local:
 - Maneja sesiones, intentos, cache offline, auditoria.
 
 Nota importante:
-- Parte de la UI actual esta en modo mock para acelerar validacion visual.
-- Falta conectar acciones a persistencia real en BD para cierre funcional completo.
-
-==================================================
-6) KNOWN ISSUES / RISKS
-==================================================
-- QMYSQL puede faltar en algunas maquinas Windows.
-- Cuentas demo hardcodeadas no deben quedar en produccion.
-- Acciones de botones no todas persisten todavia en BD (mock UI).
+- Aunque existe conexión SQL en el proyecto, el alcance actual prioriza front mock completo.
+- La base nueva `vps-poo` todavía NO es la fuente efectiva del front actual.
 
 ==================================================
 7) WHAT IS DONE VS WHAT IS MISSING
 ==================================================
 Hecho:
 - UX avanzada para los 3 roles.
-- Navegacion y estructura por rol.
-- Acciones de interfaz operativas a nivel UI.
-- Correccion de errores recientes de compilacion.
+- Registro ampliado visualmente para Usuario y Empresa.
+- Perfil completo de Usuario y Empresa a nivel UI.
+- CVs, resúmenes IA, recomendaciones y capacitación a nivel UI.
+- Postulaciones y solicitudes con mayor detalle visual.
+- Admin con gestión IA, auditoría y estado de sistema.
+- Validación sin errores reportados en los archivos tocados.
 
 Falta:
-- Integracion de todos los botones con DB/API real.
+- Integrar los botones y listas con DB/API real.
 - Migrar definitivamente auth a FastAPI.
-- Tests funcionales y de regresion.
+- Reemplazar hardcodeos por consumo real de backend.
+- Tests funcionales y de regresión.
 - Endurecimiento de seguridad para release.
 
 ==================================================
-8) NEXT RECOMMENDED STEPS
+8) KNOWN ISSUES / RISKS
 ==================================================
-1. Persistir acciones de Empresa y Usuario en BD real.
-2. Reemplazar login demo por feature flag o build de QA.
-3. Implementar endpoints FastAPI minimos y conectar Qt.
-4. QA por rol + pruebas de error.
+- QMYSQL puede faltar en algunas máquinas Windows.
+- Cuentas demo hardcodeadas no deben quedar en producción.
+- Algunas inserciones de registro siguen usando el modelo legacy actual.
+- La UI quedó más completa que la lógica de persistencia: esto es intencional en esta fase.
+
+==================================================
+9) NEXT RECOMMENDED STEPS
+==================================================
+1. Conectar primero Usuario a datos reales: perfil, CVs, postulaciones, notificaciones.
+2. Conectar luego Empresa: publicaciones, candidatos, solicitudes, resúmenes IA.
+3. Conectar Admin: métricas, settings IA y auditoría real.
+4. Reemplazar login/registro por FastAPI y dejar Qt solo como cliente.
+5. Ejecutar QA visual y funcional por rol.
 
 ==================================================
 FIN
