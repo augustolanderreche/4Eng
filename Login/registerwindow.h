@@ -2,7 +2,6 @@
 #define REGISTERWINDOW_H
 
 #include <QMainWindow>
-#include <QSqlDatabase>
 
 class QLabel;
 class QLineEdit;
@@ -23,28 +22,11 @@ private slots:
 
 private:
     void setupUi();
-    bool userExists(const QString &username);
-    bool createEmpresaRecord(const QString &username,
-                             const QString &password,
-                             const QString &email,
-                             const QString &displayName,
-                             const QString &companyName,
-                             const QString &contactPhone);
-    bool createEngineerRecord(const QString &username,
-                              const QString &password,
-                              const QString &email,
-                              const QString &displayName,
-                              const QString &firstName,
-                              const QString &lastName,
-                              int age,
-                              const QString &phone,
-                              const QString &country,
-                              const QString &programmingLanguage);
+    void showStatus(const QString &message, bool ok = false);
 
-    QSqlDatabase m_db;
     QLabel *m_statusLabel;
-
     QTabWidget *m_tabs;
+
     QLineEdit *m_empresaUserEdit;
     QLineEdit *m_empresaPassEdit;
     QLineEdit *m_empresaEmailEdit;

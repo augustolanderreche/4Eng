@@ -9,6 +9,7 @@ class QListWidgetItem;
 class QStackedWidget;
 class QLineEdit;
 class QTextEdit;
+class QComboBox;
 
 class EmpresaWindow : public QMainWindow
 {
@@ -17,38 +18,41 @@ class EmpresaWindow : public QMainWindow
 public:
     explicit EmpresaWindow(const QString &displayName, QWidget *parent = nullptr);
 
+private slots:
+    void loadProfile();
+    void loadJobs();
+    void loadApplications();
+    void createJob();
+    void sendChatMessage();
+
 private:
     void setupUi(const QString &displayName);
     QWidget *createPerfilPage();
     QWidget *createPublicacionesPage();
     QWidget *createPostulacionesPage();
-    QWidget *createCvsPage();
-    QWidget *createSolicitudesPage();
-    QWidget *createChatPage();
     QWidget *createNuevaPublicacionPage();
-    void hideNewPublicationMenu();
+    QWidget *createChatPage();
+    void setStatus(const QString &message, bool ok = true);
 
     QLabel *m_welcomeLabel;
+    QLabel *m_statusLabel;
+    QLabel *m_profileLabel;
     QLabel *m_publicacionDetailLabel;
     QLabel *m_postulacionDetailLabel;
-    QLabel *m_cvDetailLabel;
-    QLabel *m_solicitudDetailLabel;
     QListWidget *m_menuList;
-    QListWidgetItem *m_newPostMenuItem;
     QListWidget *m_publicacionesList;
     QListWidget *m_postulacionesList;
-    QListWidget *m_cvsList;
-    QListWidget *m_solicitudesList;
     QStackedWidget *m_contentStack;
     QTextEdit *m_chatHistory;
     QLineEdit *m_chatInput;
 
     QLineEdit *m_newPostTitleEdit;
     QLineEdit *m_newPostSkillsEdit;
-    QLineEdit *m_newPostLocationEdit;
-    QLineEdit *m_newPostModeEdit;
+    QLineEdit *m_newPostCityEdit;
+    QLineEdit *m_newPostCountryEdit;
+    QLineEdit *m_newPostExperienceEdit;
+    QComboBox *m_newPostModeCombo;
     QTextEdit *m_newPostDescriptionEdit;
-    int m_newPostPageIndex;
 };
 
 #endif // EMPRESAWINDOW_H

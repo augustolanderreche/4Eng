@@ -1,31 +1,66 @@
 #include "userwindow.h"
 
-#include <QAbstractItemView>
+#include "api_client.h"
+#include "localdbmanager.h"
+
+#include <QFileDialog>
+#include <QFileInfo>
 #include <QFrame>
-#include <QGridLayout>
-#include <QHeaderView>
 #include <QHBoxLayout>
-#include <QInputDialog>
+#include <QJsonArray>
+#include <QJsonDocument>
+#include <QJsonObject>
+#include <QJsonValue>
 #include <QLabel>
 #include <QLineEdit>
 #include <QListWidget>
 #include <QListWidgetItem>
 #include <QMessageBox>
-#include <QPoint>
 #include <QPushButton>
-#include <QScrollArea>
 #include <QStackedWidget>
 #include <QTextEdit>
-#include <QTableWidget>
-#include <QTableWidgetItem>
-#include <QToolButton>
 #include <QVBoxLayout>
+#include <QVariant>
 #include <QWidget>
+
+static QString jsonValueToText(const QJsonValue &value, const QString &fallback = "-")
+{
+    if (value.isString()) {
+        const QString text = value.toString();
+        return text.isEmpty() ? fallback : text;
+    }
+    if (value.isBool()) {
+        return value.toBool() ? "Sí" : "No";
+    }
+    if (value.isDouble()) {
+        return QString::number(value.toVariant().toDouble());
+    }
+    if (value.isArray()) {
+        QStringList values;
+        for (const QJsonValue &item : value.toArray()) {
+            values << jsonValueToText(item, QString());
+        }
+        return values.join(", ").isEmpty() ? fallback : values.join(", ");
+    }
+    if (value.isObject()) {
+        return QString::fromUtf8(QJsonDocument(value.toObject()).toJson(QJsonDocument::Compact));
+    }
+    return fallback;
+}
+
+static QString jtext(const QJsonObject &obj, const QString &key, const QString &fallback = "-")
+{
+    return jsonValueToText(obj.value(key), fallback);
+}
 
 UserWindow::UserWindow(const QString &displayName, QWidget *parent)
     : QMainWindow(parent)
 {
     setupUi(displayName);
+    loadProfile();
+    loadJobs();
+    loadApplications();
+    loadNotifications();
 }
 
 void UserWindow::setupUi(const QString &displayName)
@@ -34,25 +69,20 @@ void UserWindow::setupUi(const QString &displayName)
     setCentralWidget(central);
 
     auto *layout = new QVBoxLayout(central);
+    layout->setContentsMargins(24, 24, 24, 24);
+    layout->setSpacing(12);
+
     m_welcomeLabel = new QLabel(tr("Panel Usuario - %1").arg(displayName), central);
-    m_welcomeLabel->setObjectName("uwTitle");
+    m_welcomeLabel->setStyleSheet("font-size: 18pt; font-weight: 700; color: #f4eefe;");
 
-    m_bellButton = new QToolButton(central);
-    m_bellButton->setText("🔔");
-    m_bellButton->setObjectName("bellButton");
-    m_bellButton->setToolTip(tr("Notificaciones"));
-    connect(m_bellButton, &QToolButton::clicked, this, &UserWindow::showNotificationsPopup);
-
-    auto *topRow = new QHBoxLayout;
-    topRow->addWidget(m_welcomeLabel);
-    topRow->addStretch();
-    topRow->addWidget(m_bellButton);
+    m_statusLabel = new QLabel(central);
+    m_statusLabel->setAlignment(Qt::AlignCenter);
+    m_statusLabel->setWordWrap(true);
 
     auto *contentRow = new QHBoxLayout;
     m_menuList = new QListWidget(central);
-    m_menuList->addItems({tr("Perfil"), tr("CV"), tr("Puestos"), tr("Postulaciones"), tr("Solicitudes"), tr("IA y capacitación"), tr("Chat IA")});
+    m_menuList->addItems({tr("Perfil"), tr("CV + IA"), tr("Puestos"), tr("Postulaciones"), tr("Notificaciones"), tr("Chat IA")});
     m_menuList->setCurrentRow(0);
-    m_menuList->setObjectName("menuList");
     m_menuList->setFixedWidth(220);
 
     m_contentStack = new QStackedWidget(central);
@@ -60,662 +90,431 @@ void UserWindow::setupUi(const QString &displayName)
     m_contentStack->addWidget(createCvTab());
     m_contentStack->addWidget(createJobsTab());
     m_contentStack->addWidget(createApplicationsTab());
-    m_contentStack->addWidget(createRequestsTab());
-    m_contentStack->addWidget(createRecommendationsTab());
+    m_contentStack->addWidget(createNotificationsTab());
     m_contentStack->addWidget(createChatTab());
 
     connect(m_menuList, &QListWidget::currentRowChanged, m_contentStack, &QStackedWidget::setCurrentIndex);
 
-    m_notificationsPopup = createNotificationPopup();
-
     contentRow->addWidget(m_menuList);
     contentRow->addWidget(m_contentStack, 1);
 
-    layout->addLayout(topRow);
-    layout->addLayout(contentRow);
-    layout->setContentsMargins(24, 24, 24, 24);
-    layout->setSpacing(12);
-
-    setStyleSheet(
-        "#uwTitle { font-size: 18pt; font-weight: 700; color: #f4eefe; }"
-        "#menuList {"
-        "  background: #1a1028;"
-        "  border: 1px solid #4d2d78;"
-        "  border-radius: 16px;"
-        "  padding: 10px;"
-        "}"
-        "#menuList::item {"
-        "  background: transparent;"
-        "  border-radius: 12px;"
-        "  color: #d9c8f5;"
-        "  margin: 4px 0;"
-        "  padding: 10px 12px;"
-        "}"
-        "#menuList::item:selected {"
-        "  background: #6b3fa6;"
-        "  color: #ffffff;"
-        "  border: 1px solid #9f79d9;"
-        "}"
-        "QFrame#card {"
-        "  background: #1e1230;"
-        "  border: 1px solid #5c3a8f;"
-        "  border-radius: 16px;"
-        "}"
-        "QPushButton#violetButton {"
-        "  background-color: #6a3ca8;"
-        "  border: 1px solid #9f79d9;"
-        "  color: white;"
-        "  border-radius: 12px;"
-        "  padding: 10px 14px;"
-        "}"
-        "QPushButton#violetButton:hover { background-color: #7a49ba; }"
-        "QPushButton#outlineViolet {"
-        "  background-color: #23153a;"
-        "  border: 1px solid #7b57b6;"
-        "  color: #eadbff;"
-        "  border-radius: 12px;"
-        "  padding: 10px 14px;"
-        "}"
-        "QPushButton#outlineViolet:hover { background-color: #2d1b47; }"
-        "QToolButton#bellButton {"
-        "  background-color: #2a1842;"
-        "  border: 1px solid #7b57b6;"
-        "  color: #f2e7ff;"
-        "  border-radius: 14px;"
-        "  padding: 8px 12px;"
-        "  font-size: 16pt;"
-        "}"
-        "QToolButton#bellButton:hover { background-color: #3a245a; }"
-    );
+    layout->addWidget(m_welcomeLabel);
+    layout->addLayout(contentRow, 1);
+    layout->addWidget(m_statusLabel);
 
     setWindowTitle(tr("Panel usuario"));
-    resize(1080, 720);
+    resize(1120, 760);
+}
+
+void UserWindow::setStatus(const QString &message, bool ok)
+{
+    m_statusLabel->setStyleSheet(ok ? "color:#A8E6CF;" : "color:#F07178;");
+    m_statusLabel->setText(message);
+    LocalDbManager::instance().updateLastActivity();
 }
 
 QWidget *UserWindow::createProfileTab()
 {
     auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
+    auto *layout = new QVBoxLayout(page);
+    auto *reload = new QPushButton(tr("Actualizar perfil"), page);
+    connect(reload, &QPushButton::clicked, this, &UserWindow::loadProfile);
 
-    auto *summaryCard = new QFrame(page);
-    summaryCard->setObjectName("card");
-    auto *summaryLayout = new QVBoxLayout(summaryCard);
-    auto *title = new QLabel(tr("Perfil profesional"), summaryCard);
-    title->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
+    m_profileLabel = new QLabel(page);
+    m_profileLabel->setWordWrap(true);
+    m_profileLabel->setStyleSheet("font-size: 11pt;");
 
-    auto *profileText = new QLabel(
-        tr("Nombre: Usuario Demo\n"
-           "Rol: Ingeniero\n"
-           "Edad: 24\n"
-           "Ubicación: Córdoba, Argentina\n"
-           "Lenguaje principal: Python\n"
-           "Experiencia: 1.5 años\n"
-           "Seniority: Junior\n"
-           "Bio: Perfil inicial con buena base en Python y SQL. Interesado en backend y automatización."),
-        summaryCard);
-    profileText->setWordWrap(true);
-
-    auto *links = new QLabel(
-        tr("LinkedIn: linkedin.com/in/usuario-demo\nGitHub: github.com/user_demo\nPortfolio: portfolio-demo.dev"),
-        summaryCard);
-    links->setWordWrap(true);
-
-    auto *buttonRow = new QHBoxLayout;
-    auto *editSummary = new QPushButton(tr("Editar resumen"), summaryCard);
-    auto *editLinks = new QPushButton(tr("Actualizar links"), summaryCard);
-    editSummary->setObjectName("violetButton");
-    editLinks->setObjectName("outlineViolet");
-    connect(editSummary, &QPushButton::clicked, this, [this]() {
-        pushNotification(tr("[Perfil] Resumen profesional actualizado en modo mock."));
-        QMessageBox::information(this, tr("Perfil"), tr("El perfil quedó actualizado solo a nivel visual para la demo."));
-    });
-    connect(editLinks, &QPushButton::clicked, this, [this]() {
-        pushNotification(tr("[Perfil] Links públicos revisados."));
-        QMessageBox::information(this, tr("Perfil"), tr("LinkedIn, GitHub y portfolio validados en el front demo."));
-    });
-    buttonRow->addWidget(editSummary);
-    buttonRow->addWidget(editLinks);
-
-    summaryLayout->addWidget(title);
-    summaryLayout->addWidget(profileText);
-    summaryLayout->addWidget(links);
-    summaryLayout->addStretch();
-    summaryLayout->addLayout(buttonRow);
-
-    auto *skillsCard = new QFrame(page);
-    skillsCard->setObjectName("card");
-    auto *skillsLayout = new QVBoxLayout(skillsCard);
-    auto *skillsTitle = new QLabel(tr("Skills detectadas y cargadas"), skillsCard);
-    skillsTitle->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-
-    auto *skillsList = new QListWidget(skillsCard);
-    skillsList->addItem("Python | Advanced | 3.0 años | fuente: CV_AI");
-    skillsList->addItem("FastAPI | Intermediate | 2.0 años | fuente: CV_AI");
-    skillsList->addItem("SQL | Advanced | 3.0 años | fuente: CV_AI");
-    skillsList->addItem("Docker | Beginner | gap detectado");
-    skillsList->setStyleSheet("background:#2a1842; border:1px solid #6a46a3; border-radius: 12px; color:#f2e7ff;");
-
-    auto *skillHint = new QLabel(
-        tr("Estas skills reflejan lo que luego vivirá en skills + user_skills."
-           " En esta etapa quedan hardcodeadas para que el flujo visual esté completo."),
-        skillsCard);
-    skillHint->setWordWrap(true);
-
-    skillsLayout->addWidget(skillsTitle);
-    skillsLayout->addWidget(skillsList);
-    skillsLayout->addWidget(skillHint);
-
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 2);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(summaryCard, 0, 1);
-    layout->addWidget(skillsCard, 0, 2);
+    layout->addWidget(reload);
+    layout->addWidget(m_profileLabel);
+    layout->addStretch();
     return page;
 }
 
 QWidget *UserWindow::createCvTab()
 {
     auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
+    auto *layout = new QVBoxLayout(page);
 
-    auto *hint = new QLabel(tr("Subi tu CV para postularte. Los archivos quedan listos para revisión de empresas."), page);
-    hint->setWordWrap(true);
-    hint->setAlignment(Qt::AlignCenter);
+    auto *info = new QLabel(tr("Subí un CV y analizalo con IA. El análisis queda guardado en el VPS y una copia se cachea localmente en SQLite."), page);
+    info->setWordWrap(true);
 
-    auto *centerCard = new QFrame(page);
-    centerCard->setObjectName("card");
-    auto *cardLayout = new QVBoxLayout(centerCard);
-
-    auto *title = new QLabel(tr("Tus CVs"), centerCard);
-    title->setAlignment(Qt::AlignCenter);
-    title->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-
-    m_cvList = new QListWidget(centerCard);
-    m_cvList->addItem("cv_fullstack_2026.pdf | ANALYZED | Skills: Python, SQL");
-    m_cvList->addItem("cv_backend_python.pdf | ANALYZED | Skills: Python, FastAPI, SQL");
-    m_cvList->addItem("cv_cpp_qt.pdf | ANALYZED | Skills: C++, Qt");
-    m_cvList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_cvList->setStyleSheet("background:#2a1842; border:1px solid #6a46a3; border-radius: 12px; color:#f2e7ff;");
+    m_cvTargetEdit = new QLineEdit(page);
+    m_cvTargetEdit->setPlaceholderText(tr("Puesto objetivo para analizar compatibilidad. Ej: Desarrollador C++ Qt Junior"));
 
     auto *buttonRow = new QHBoxLayout;
-    auto *upload = new QPushButton(tr("Subir CV"), centerCard);
-    auto *view = new QPushButton(tr("Ver CV seleccionado"), centerCard);
-    auto *summary = new QPushButton(tr("Ver resumen IA"), centerCard);
-    auto *remove = new QPushButton(tr("Eliminar CV"), centerCard);
-    upload->setObjectName("violetButton");
-    view->setObjectName("outlineViolet");
-    summary->setObjectName("outlineViolet");
-    remove->setObjectName("outlineViolet");
-    connect(upload, &QPushButton::clicked, this, [this]() {
-        bool ok = false;
-        const QString fileName = QInputDialog::getText(this, tr("Subir CV"), tr("Nombre del archivo CV:"), QLineEdit::Normal, "", &ok).trimmed();
-        if (ok && !fileName.isEmpty()) {
-            m_cvList->addItem(fileName);
-            m_cvList->setCurrentRow(m_cvList->count() - 1);
-            pushNotification(tr("[Sistema] CV subido: %1").arg(fileName));
-        }
-    });
-
-    connect(view, &QPushButton::clicked, this, [this]() {
-        auto *current = m_cvList->currentItem();
-        if (!current) {
-            QMessageBox::information(this, tr("CV"), tr("Selecciona un CV para visualizar."));
-            return;
-        }
-        QMessageBox::information(this, tr("CV seleccionado"), tr("Visualizando: %1").arg(current->text()));
-    });
-
-    connect(summary, &QPushButton::clicked, this, [this]() {
-        auto *current = m_cvList->currentItem();
-        if (!current) {
-            QMessageBox::information(this, tr("CV"), tr("Selecciona un CV para ver el resumen IA."));
-            return;
-        }
-        QMessageBox::information(this,
-                                 tr("Resumen IA del CV"),
-                                 tr("Perfil: Backend Junior Python\n"
-                                    "Score general: 78\n"
-                                    "Fortalezas: Python, SQL\n"
-                                    "Puntos a mejorar: Docker, Testing, FastAPI avanzado\n"
-                                    "Roles sugeridos: Backend Python Junior, Data Analyst Junior"));
-    });
-
-    connect(remove, &QPushButton::clicked, this, [this]() {
-        auto *current = m_cvList->currentItem();
-        if (!current) {
-            QMessageBox::information(this, tr("CV"), tr("Selecciona un CV para eliminar."));
-            return;
-        }
-        const QString removed = current->text();
-        delete m_cvList->takeItem(m_cvList->row(current));
-        pushNotification(tr("[Sistema] CV eliminado: %1").arg(removed));
-    });
-
+    auto *upload = new QPushButton(tr("Subir CV sin analizar"), page);
+    auto *analyze = new QPushButton(tr("Subir y analizar CV con IA"), page);
+    connect(upload, &QPushButton::clicked, this, &UserWindow::uploadCv);
+    connect(analyze, &QPushButton::clicked, this, &UserWindow::analyzeCv);
     buttonRow->addWidget(upload);
-    buttonRow->addWidget(view);
-    buttonRow->addWidget(summary);
-    buttonRow->addWidget(remove);
+    buttonRow->addWidget(analyze);
 
-    cardLayout->addWidget(title);
-    cardLayout->addWidget(hint);
-    cardLayout->addWidget(m_cvList);
-    cardLayout->addLayout(buttonRow);
+    m_cvList = new QListWidget(page);
+    m_cvList->addItem(tr("Los CV subidos aparecerán acá durante esta sesión."));
 
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 3);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(centerCard, 0, 1);
+    m_cvAnalysisText = new QTextEdit(page);
+    m_cvAnalysisText->setReadOnly(true);
+    m_cvAnalysisText->setPlaceholderText(tr("Acá se mostrará el feedback de IA: fortalezas, debilidades, compatibilidad y recomendaciones."));
+
+    layout->addWidget(info);
+    layout->addWidget(m_cvTargetEdit);
+    layout->addLayout(buttonRow);
+    layout->addWidget(new QLabel(tr("CVs de esta sesión"), page));
+    layout->addWidget(m_cvList, 1);
+    layout->addWidget(new QLabel(tr("Resultado del análisis IA"), page));
+    layout->addWidget(m_cvAnalysisText, 2);
     return page;
 }
 
 QWidget *UserWindow::createJobsTab()
 {
     auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
+    auto *layout = new QVBoxLayout(page);
+    auto *buttonRow = new QHBoxLayout;
+    auto *reload = new QPushButton(tr("Actualizar puestos"), page);
+    auto *apply = new QPushButton(tr("Postularme al puesto seleccionado"), page);
+    connect(reload, &QPushButton::clicked, this, &UserWindow::loadJobs);
+    connect(apply, &QPushButton::clicked, this, &UserWindow::applyToSelectedJob);
+    buttonRow->addWidget(reload);
+    buttonRow->addWidget(apply);
 
     m_jobsList = new QListWidget(page);
-    m_jobsList->setObjectName("cardsList");
-    m_jobsList->setStyleSheet(
-        "QListWidget#cardsList { background:#1e1230; border:1px solid #5c3a8f; border-radius:16px; color:#f1e6ff; }"
-        "QListWidget#cardsList::item { border:1px solid #6a46a3; border-radius:12px; margin:6px; padding:10px; background:#2a1842; }"
-        "QListWidget#cardsList::item:selected { background:#6b3fa6; border-color:#a27bdd; }"
-    );
-    m_jobsList->addItem("TechNova\nPuesto: Backend Python\nSkills: Python, FastAPI, SQL\nMatch: 92%");
-    m_jobsList->addItem("Empresa Demo\nPuesto: C++ Qt Developer\nSkills: C++, Qt\nMatch: 91%");
-    m_jobsList->addItem("Empresa Demo\nPuesto: Data Analyst\nSkills: SQL, Python\nMatch: 82%");
-    m_jobsList->setCurrentRow(0);
-
-    auto *detailCard = new QFrame(page);
-    detailCard->setObjectName("card");
-    auto *detailLayout = new QVBoxLayout(detailCard);
-    auto *title = new QLabel(tr("Detalle de publicación seleccionada"), detailCard);
-    title->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-    m_jobDetailLabel = new QLabel(tr("Empresa: Empresa Demo\nPuesto: Backend Python\nModalidad: Remoto\nSeniority: Junior\nDescripción: APIs REST con Python, FastAPI y SQL."), detailCard);
+    m_jobDetailLabel = new QLabel(tr("Seleccioná un puesto para ver el detalle."), page);
     m_jobDetailLabel->setWordWrap(true);
-    auto *buttonRow = new QHBoxLayout;
-    auto *viewInfo = new QPushButton(tr("Ver info"), detailCard);
-    auto *apply = new QPushButton(tr("Postularme"), detailCard);
-    viewInfo->setObjectName("outlineViolet");
-    apply->setObjectName("violetButton");
-    buttonRow->addWidget(viewInfo);
-    buttonRow->addWidget(apply);
-    detailLayout->addWidget(title);
-    connect(m_jobsList, &QListWidget::currentTextChanged, this, [this](const QString &text) {
-        if (!text.isEmpty()) {
-            m_jobDetailLabel->setText(text + "\nModalidad: Remoto/Híbrido según puesto\nDescripción: Publicación recomendada por tus skills y recomendaciones IA.");
-        }
-    });
 
-    connect(viewInfo, &QPushButton::clicked, this, [this]() {
-        auto *current = m_jobsList->currentItem();
+    connect(m_jobsList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current) {
         if (!current) {
-            QMessageBox::information(this, tr("Puestos"), tr("Selecciona un puesto para ver información."));
             return;
         }
-        QMessageBox::information(this, tr("Detalle del puesto"), current->text());
+        m_jobDetailLabel->setText(current->data(Qt::UserRole + 1).toString());
     });
 
-    connect(apply, &QPushButton::clicked, this, [this]() {
-        auto *current = m_jobsList->currentItem();
-        if (!current) {
-            QMessageBox::information(this, tr("Puestos"), tr("Selecciona un puesto para postularte."));
-            return;
-        }
-        const QString cardText = current->text();
-        const QStringList lines = cardText.split('\n');
-        if (lines.size() >= 2) {
-            m_applicationsList->addItem(lines.at(0) + "\n" + lines.at(1) + "\nEstado: Postulada\nÚltima actualización: Ahora\nCV asociado: cv_fullstack_2026.pdf");
-            pushNotification(tr("[Postulación] Enviada a %1").arg(lines.at(0)));
-            QMessageBox::information(this, tr("Postulación"), tr("Tu solicitud fue enviada correctamente."));
-        }
-    });
-
-    detailLayout->addWidget(m_jobDetailLabel);
-    detailLayout->addStretch();
-    detailLayout->addLayout(buttonRow);
-
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 2);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(m_jobsList, 0, 1);
-    layout->addWidget(detailCard, 0, 2);
+    layout->addLayout(buttonRow);
+    layout->addWidget(m_jobsList, 1);
+    layout->addWidget(m_jobDetailLabel);
     return page;
 }
 
 QWidget *UserWindow::createApplicationsTab()
 {
     auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
+    auto *layout = new QVBoxLayout(page);
+    auto *reload = new QPushButton(tr("Actualizar mis postulaciones"), page);
+    connect(reload, &QPushButton::clicked, this, &UserWindow::loadApplications);
 
     m_applicationsList = new QListWidget(page);
-    m_applicationsList->setStyleSheet(
-        "QListWidget { background:#1e1230; border:1px solid #5c3a8f; border-radius:16px; color:#f1e6ff; }"
-        "QListWidget::item { border:1px solid #6a46a3; border-radius:12px; margin:6px; padding:10px; background:#2a1842; }"
-        "QListWidget::item:selected { background:#6b3fa6; border-color:#a27bdd; }"
-    );
-    m_applicationsList->addItem("Empresa Demo\nPuesto: Backend Python\nEstado: Seleccionada\nÚltima actualización: Hoy 10:35\nScore IA: 96");
-    m_applicationsList->addItem("Empresa Demo\nPuesto: Backend Python\nEstado: EnRevision\nÚltima actualización: Hoy 09:10\nScore IA: 82");
-    m_applicationsList->addItem("Empresa Demo\nPuesto: C++ Qt Developer\nEstado: Postulada\nÚltima actualización: Ayer 18:20\nScore IA: 91");
-
-    auto *infoCard = new QFrame(page);
-    infoCard->setObjectName("card");
-    auto *infoLayout = new QVBoxLayout(infoCard);
-    auto *title = new QLabel(tr("Información de solicitud"), infoCard);
-    title->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-    m_applicationDetailLabel = new QLabel(tr("Selecciona una tarjeta para ver detalle de empresa, requisitos adicionales y próximos pasos."), infoCard);
+    m_applicationDetailLabel = new QLabel(tr("Seleccioná una postulación."), page);
     m_applicationDetailLabel->setWordWrap(true);
 
-    auto *buttonRow = new QHBoxLayout;
-    auto *history = new QPushButton(tr("Ver historial"), infoCard);
-    auto *evaluation = new QPushButton(tr("Ver evaluación IA"), infoCard);
-    auto *message = new QPushButton(tr("Ver mensaje empresa"), infoCard);
-    history->setObjectName("outlineViolet");
-    evaluation->setObjectName("violetButton");
-    message->setObjectName("outlineViolet");
-
-    connect(m_applicationsList, &QListWidget::currentTextChanged, this, [this](const QString &text) {
-        if (!text.isEmpty()) {
-            m_applicationDetailLabel->setText(text + "\nPróximo paso: revisar solicitud de empresa y brechas de skills detectadas.");
+    connect(m_applicationsList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current) {
+        if (current) {
+            m_applicationDetailLabel->setText(current->data(Qt::UserRole + 1).toString());
         }
     });
-    connect(history, &QPushButton::clicked, this, [this]() {
-        QMessageBox::information(this,
-                                 tr("Historial de estados"),
-                                 tr("Postulada -> EnRevision -> Seleccionada\n"
-                                    "Nota empresa: Perfil recomendado para avanzar."));
-    });
-    connect(evaluation, &QPushButton::clicked, this, [this]() {
-        QMessageBox::information(this,
-                                 tr("Evaluación IA"),
-                                 tr("Recomendación: RecomendadaConCapacitacion\n"
-                                    "Fortalezas: Python, SQL\n"
-                                    "Faltantes: FastAPI, Docker, Testing\n"
-                                    "Sugerencias: Aprender FastAPI, Practicar Docker, Sumar tests"));
-    });
-    connect(message, &QPushButton::clicked, this, [this]() {
-        QMessageBox::information(this,
-                                 tr("Mensaje de empresa"),
-                                 tr("La empresa inició la revisión y puede pedir documentación o entrevista técnica."));
-    });
-    infoLayout->addWidget(title);
-    infoLayout->addWidget(m_applicationDetailLabel);
-    infoLayout->addStretch();
-    buttonRow->addWidget(history);
-    buttonRow->addWidget(evaluation);
-    buttonRow->addWidget(message);
-    infoLayout->addLayout(buttonRow);
 
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 2);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(m_applicationsList, 0, 1);
-    layout->addWidget(infoCard, 0, 2);
+    layout->addWidget(reload);
+    layout->addWidget(m_applicationsList, 1);
+    layout->addWidget(m_applicationDetailLabel);
     return page;
 }
 
-QWidget *UserWindow::createRequestsTab()
+QWidget *UserWindow::createNotificationsTab()
 {
     auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
+    auto *layout = new QVBoxLayout(page);
+    auto *row = new QHBoxLayout;
+    auto *reload = new QPushButton(tr("Actualizar notificaciones"), page);
+    auto *markRead = new QPushButton(tr("Marcar seleccionada como leída"), page);
+    connect(reload, &QPushButton::clicked, this, &UserWindow::loadNotifications);
+    connect(markRead, &QPushButton::clicked, this, &UserWindow::markSelectedNotificationRead);
+    row->addWidget(reload);
+    row->addWidget(markRead);
 
-    auto *requestsList = new QListWidget(page);
-    requestsList->setStyleSheet(
-        "QListWidget { background:#1e1230; border:1px solid #5c3a8f; border-radius:16px; color:#f1e6ff; }"
-        "QListWidget::item { border:1px solid #6a46a3; border-radius:12px; margin:6px; padding:10px; background:#2a1842; }"
-        "QListWidget::item:selected { background:#6b3fa6; border-color:#a27bdd; }"
-    );
-    requestsList->addItem("Empresa Demo\nREQUEST_DOCUMENTS\nEnviar documentación adicional\nEstado: Pending");
-    requestsList->addItem("Empresa Demo\nSCHEDULE_MEETING\nReunión técnica 2026-05-30 10:00\nEstado: Accepted");
-    requestsList->addItem("Empresa Demo\nCUSTOM_MESSAGE\nConsulta sobre experiencia Qt\nEstado: Pending");
-
-    auto *detailCard = new QFrame(page);
-    detailCard->setObjectName("card");
-    auto *detailLayout = new QVBoxLayout(detailCard);
-    auto *title = new QLabel(tr("Solicitudes de la empresa"), detailCard);
-    title->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-    auto *detail = new QLabel(tr("Selecciona una solicitud para aceptar, rechazar o marcar como completada."), detailCard);
-    detail->setWordWrap(true);
-
-    auto *buttonRow = new QHBoxLayout;
-    auto *accept = new QPushButton(tr("Aceptar"), detailCard);
-    auto *decline = new QPushButton(tr("Rechazar"), detailCard);
-    auto *complete = new QPushButton(tr("Marcar completada"), detailCard);
-    accept->setObjectName("violetButton");
-    decline->setObjectName("outlineViolet");
-    complete->setObjectName("outlineViolet");
-
-    connect(requestsList, &QListWidget::currentTextChanged, this, [detail](const QString &text) {
-        if (!text.isEmpty()) {
-            detail->setText(text + "\nRespuesta sugerida: adjuntar CV actualizado o confirmar disponibilidad.");
-        }
-    });
-    connect(accept, &QPushButton::clicked, this, [this, requestsList]() {
-        auto *current = requestsList->currentItem();
-        if (!current) {
-            return;
-        }
-        current->setText(current->text().replace("Estado: Pending", "Estado: Accepted"));
-        pushNotification(tr("[Solicitud] Respuesta enviada a la empresa."));
-    });
-    connect(decline, &QPushButton::clicked, this, [this, requestsList]() {
-        auto *current = requestsList->currentItem();
-        if (!current) {
-            return;
-        }
-        current->setText(current->text().replace("Estado: Pending", "Estado: Declined"));
-        pushNotification(tr("[Solicitud] Solicitud rechazada en modo mock."));
-    });
-    connect(complete, &QPushButton::clicked, this, [this, requestsList]() {
-        auto *current = requestsList->currentItem();
-        if (!current) {
-            return;
-        }
-        current->setText(current->text().replace("Estado: Accepted", "Estado: Completed").replace("Estado: Pending", "Estado: Completed"));
-        pushNotification(tr("[Solicitud] Acción marcada como completada."));
-    });
-
-    buttonRow->addWidget(accept);
-    buttonRow->addWidget(decline);
-    buttonRow->addWidget(complete);
-    detailLayout->addWidget(title);
-    detailLayout->addWidget(detail);
-    detailLayout->addStretch();
-    detailLayout->addLayout(buttonRow);
-
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 2);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(requestsList, 0, 1);
-    layout->addWidget(detailCard, 0, 2);
-    return page;
-}
-
-QWidget *UserWindow::createRecommendationsTab()
-{
-    auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
-
-    auto *jobsCard = new QFrame(page);
-    jobsCard->setObjectName("card");
-    auto *jobsLayout = new QVBoxLayout(jobsCard);
-    auto *jobsTitle = new QLabel(tr("Recomendaciones de puestos"), jobsCard);
-    jobsTitle->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-
-    auto *recommendationsTable = new QTableWidget(3, 4, jobsCard);
-    recommendationsTable->setHorizontalHeaderLabels({tr("Puesto"), tr("Score"), tr("Faltantes"), tr("Origen")});
-    recommendationsTable->horizontalHeader()->setStretchLastSection(true);
-    recommendationsTable->verticalHeader()->setVisible(false);
-    recommendationsTable->setEditTriggers(QAbstractItemView::NoEditTriggers);
-    recommendationsTable->setItem(0, 0, new QTableWidgetItem("Backend Python"));
-    recommendationsTable->setItem(0, 1, new QTableWidgetItem("82"));
-    recommendationsTable->setItem(0, 2, new QTableWidgetItem("FastAPI, Docker, Testing"));
-    recommendationsTable->setItem(0, 3, new QTableWidgetItem("AI"));
-    recommendationsTable->setItem(1, 0, new QTableWidgetItem("Backend Python"));
-    recommendationsTable->setItem(1, 1, new QTableWidgetItem("96"));
-    recommendationsTable->setItem(1, 2, new QTableWidgetItem("Docker avanzado"));
-    recommendationsTable->setItem(1, 3, new QTableWidgetItem("AI"));
-    recommendationsTable->setItem(2, 0, new QTableWidgetItem("C++ Qt Developer"));
-    recommendationsTable->setItem(2, 1, new QTableWidgetItem("91"));
-    recommendationsTable->setItem(2, 2, new QTableWidgetItem("Testing C++"));
-    recommendationsTable->setItem(2, 3, new QTableWidgetItem("AI"));
-
-    jobsLayout->addWidget(jobsTitle);
-    jobsLayout->addWidget(recommendationsTable);
-
-    auto *trainingCard = new QFrame(page);
-    trainingCard->setObjectName("card");
-    auto *trainingLayout = new QVBoxLayout(trainingCard);
-    auto *trainingTitle = new QLabel(tr("Capacitaciones sugeridas"), trainingCard);
-    trainingTitle->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-
-    auto *trainingList = new QListWidget(trainingCard);
-    trainingList->addItem("HIGH | FastAPI | Practicar endpoints y validaciones | 12 hs");
-    trainingList->addItem("NORMAL | Docker | Dockerizar servicios y dependencias | 8 hs");
-    trainingList->addItem("NORMAL | Testing | Sumar tests de API e integración | 10 hs");
-    trainingList->setStyleSheet("background:#2a1842; border:1px solid #6a46a3; border-radius: 12px; color:#f2e7ff;");
-
-    auto *feedback = new QLabel(
-        tr("Resumen IA para usuario: tu perfil tiene buen encaje en Backend Python, pero conviene reforzar FastAPI, Docker y testing para subir el match arriba del 90%."),
-        trainingCard);
-    feedback->setWordWrap(true);
-
-    trainingLayout->addWidget(trainingTitle);
-    trainingLayout->addWidget(trainingList);
-    trainingLayout->addWidget(feedback);
-
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 2);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(jobsCard, 0, 1);
-    layout->addWidget(trainingCard, 0, 2);
+    m_notificationsList = new QListWidget(page);
+    layout->addLayout(row);
+    layout->addWidget(m_notificationsList, 1);
     return page;
 }
 
 QWidget *UserWindow::createChatTab()
 {
     auto *page = new QWidget;
-    auto *layout = new QGridLayout(page);
-
-    auto *chatCard = new QFrame(page);
-    chatCard->setObjectName("card");
-    auto *chatLayout = new QVBoxLayout(chatCard);
-
-    auto *title = new QLabel(tr("Chat IA"), chatCard);
-    title->setStyleSheet("font-size: 14pt; font-weight: 700; color: #f4eefe;");
-
-    m_chatHistory = new QTextEdit(chatCard);
+    auto *layout = new QVBoxLayout(page);
+    m_chatHistory = new QTextEdit(page);
     m_chatHistory->setReadOnly(true);
-    m_chatHistory->setStyleSheet("background:#150e24; border:1px solid #563682; border-radius:12px; color:#f5edff;");
-    m_chatHistory->setHtml(
-        "<div style='margin:8px;'>"
-        "<div style='background:#6b3fa6; color:white; padding:10px 12px; border-radius:14px; width:55%; margin-left:auto; margin-bottom:8px;'>"
-        "Hola IA, ¿qué puesto me conviene con Python y SQL?"
-        "</div>"
-        "<div style='background:#2c1b45; color:#f5edff; padding:10px 12px; border-radius:14px; width:68%; margin-bottom:8px;'>"
-        "Con tu perfil te conviene Backend Python en TechNova y Data Analyst en DataLoop."
-        "</div>"
-        "<div style='background:#6b3fa6; color:white; padding:10px 12px; border-radius:14px; width:50%; margin-left:auto; margin-bottom:8px;'>"
-        "¿Qué me falta para mejorar el match?"
-        "</div>"
-        "<div style='background:#2c1b45; color:#f5edff; padding:10px 12px; border-radius:14px; width:70%;'>"
-        "Sumá FastAPI, testing y dockerización de servicios para subir tu match arriba de 90%."
-        "</div>"
-        "</div>"
-    );
+    m_chatHistory->setPlainText(tr("Chat IA visual. Para hacerlo real falta exponer un endpoint de chat en FastAPI."));
+    m_chatInput = new QLineEdit(page);
+    m_chatInput->setPlaceholderText(tr("Escribí un mensaje..."));
+    auto *send = new QPushButton(tr("Enviar"), page);
+    connect(send, &QPushButton::clicked, this, &UserWindow::sendChatMessage);
+    connect(m_chatInput, &QLineEdit::returnPressed, this, &UserWindow::sendChatMessage);
 
-    auto *inputRow = new QHBoxLayout;
-    m_chatInput = new QLineEdit(chatCard);
-    m_chatInput->setPlaceholderText(tr("Escribe tu consulta a la IA..."));
-    m_chatInput->setStyleSheet("background:#24163a; border:1px solid #6a46a3; border-radius:12px; color:#f5edff; padding:8px;");
-    auto *sendButton = new QPushButton(tr("Enviar"), chatCard);
-    sendButton->setObjectName("violetButton");
-    connect(sendButton, &QPushButton::clicked, this, [this]() {
-        const QString msg = m_chatInput->text().trimmed();
-        if (msg.isEmpty()) {
-            return;
-        }
-        m_chatHistory->append("<div style='background:#6b3fa6; color:white; padding:8px 10px; border-radius:12px; margin:6px 0; text-align:right;'><b>Tú:</b> " + msg.toHtmlEscaped() + "</div>");
-        m_chatHistory->append("<div style='background:#2c1b45; color:#f5edff; padding:8px 10px; border-radius:12px; margin:6px 0;'><b>IA:</b> Entendido. Te recomiendo revisar requisitos del puesto y actualizar tu CV con proyectos recientes.</div>");
-        m_chatInput->clear();
-    });
-    inputRow->addWidget(m_chatInput);
-    inputRow->addWidget(sendButton);
-
-    chatLayout->addWidget(title);
-    chatLayout->addWidget(m_chatHistory);
-    chatLayout->addLayout(inputRow);
-
-    layout->setColumnStretch(0, 1);
-    layout->setColumnStretch(1, 2);
-    layout->setColumnStretch(2, 2);
-    layout->addWidget(chatCard, 0, 1, 1, 2);
+    auto *row = new QHBoxLayout;
+    row->addWidget(m_chatInput, 1);
+    row->addWidget(send);
+    layout->addWidget(m_chatHistory, 1);
+    layout->addLayout(row);
     return page;
 }
 
-QFrame *UserWindow::createNotificationPopup()
+void UserWindow::loadProfile()
 {
-    auto *popup = new QFrame(nullptr);
-    popup->setWindowFlags(Qt::Popup | Qt::FramelessWindowHint);
-    popup->setObjectName("card");
-    popup->setMinimumWidth(420);
+    bool ok = false;
+    QString error;
+    const QJsonDocument doc = ApiClient::instance().get("/users/profile", &ok, &error);
+    if (!ok || !doc.isObject()) {
+        setStatus(tr("Perfil: %1").arg(error), false);
+        return;
+    }
 
-    auto *layout = new QVBoxLayout(popup);
-    auto *title = new QLabel(tr("Notificaciones"), popup);
-    title->setStyleSheet("font-size: 12pt; font-weight: 700; color: #f4eefe;");
+    const QJsonObject o = doc.object();
+    m_profileLabel->setText(tr("ID: %1\nUsuario: %2\nNombre visible: %3\nRol: %4\nEmail: %5\nActivo: %6\nÚltimo login: %7")
+                            .arg(jtext(o, "id"),
+                                 jtext(o, "username"),
+                                 jtext(o, "display_name"),
+                                 jtext(o, "role"),
+                                 jtext(o, "email"),
+                                 jtext(o, "is_active"),
+                                 jtext(o, "last_login")));
+    setStatus(tr("Perfil actualizado desde la API."));
+}
 
-    m_notificationsList = new QListWidget(popup);
-    m_notificationsList->setSelectionMode(QAbstractItemView::SingleSelection);
-    m_notificationsList->addItem("[APPLICATION_ACCEPTED] Empresa Demo: tu postulación a Backend Python fue seleccionada.");
-    m_notificationsList->addItem("[APPLICATION_STATUS_CHANGED] Empresa Demo: tu postulación a Backend Python está en revisión.");
-    m_notificationsList->addItem("[COMPANY_REQUEST] Empresa Demo solicitó documentación adicional.");
-    m_notificationsList->setStyleSheet("background:#24163a; border:1px solid #6a46a3; border-radius:12px; color:#f5edff;");
-
-    auto *row = new QHBoxLayout;
-    auto *markOne = new QPushButton(tr("Marcar seleccionada como leída"), popup);
-    auto *markAll = new QPushButton(tr("Marcar todas como leídas"), popup);
-    markOne->setObjectName("outlineViolet");
-    markAll->setObjectName("violetButton");
-
-    connect(markOne, &QPushButton::clicked, this, [this]() {
-        auto *current = m_notificationsList->currentItem();
-        if (current) {
-            current->setText("[Leída] " + current->text());
-        }
-    });
-    connect(markAll, &QPushButton::clicked, this, [this]() {
-        for (int i = 0; i < m_notificationsList->count(); ++i) {
-            QListWidgetItem *item = m_notificationsList->item(i);
-            if (!item->text().startsWith("[Leída]")) {
-                item->setText("[Leída] " + item->text());
+void UserWindow::loadJobs()
+{
+    bool ok = false;
+    QString error;
+    const QJsonDocument doc = ApiClient::instance().get("/jobs/list", &ok, &error);
+    if (!ok || !doc.isArray()) {
+        bool foundCache = false;
+        const QJsonDocument cached = LocalDbManager::instance().getCachedData("job_posts", "all", ApiClient::instance().currentUser().value("id").toInt(), &foundCache);
+        if (foundCache && cached.isArray()) {
+            m_jobsList->clear();
+            for (const QJsonValue &value : cached.array()) {
+                const QJsonObject o = value.toObject();
+                auto *item = new QListWidgetItem(QString("%1\n%2 | %3 | %4")
+                                                     .arg(jtext(o, "title"), jtext(o, "location_mode"), jtext(o, "country"), jtext(o, "status")));
+                item->setData(Qt::UserRole, o.value("id").toInt());
+                item->setData(Qt::UserRole + 1, QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Indented)));
+                m_jobsList->addItem(item);
             }
+            setStatus(tr("Sin conexión/API con error. Mostrando puestos desde SQLite local."));
+            return;
         }
-    });
 
-    row->addWidget(markOne);
-    row->addWidget(markAll);
-
-    layout->addWidget(title);
-    layout->addWidget(m_notificationsList);
-    layout->addLayout(row);
-    layout->setContentsMargins(14, 14, 14, 14);
-    return popup;
-}
-
-void UserWindow::showNotificationsPopup()
-{
-    if (!m_notificationsPopup) {
+        setStatus(tr("Puestos: %1").arg(error), false);
         return;
     }
 
-    QPoint pos = m_bellButton->mapToGlobal(QPoint(0, m_bellButton->height() + 8));
-    m_notificationsPopup->move(pos.x() - m_notificationsPopup->width() + m_bellButton->width(), pos.y());
-    m_notificationsPopup->show();
+    LocalDbManager::instance().cacheData("job_posts", "all", doc, ApiClient::instance().currentUser().value("id").toInt());
+
+    m_jobsList->clear();
+    const QJsonArray arr = doc.array();
+    for (const QJsonValue &value : arr) {
+        const QJsonObject o = value.toObject();
+        const QString title = jtext(o, "title");
+        const QString mode = jtext(o, "location_mode");
+        const QString country = jtext(o, "country");
+        const QString status = jtext(o, "status");
+        auto *item = new QListWidgetItem(QString("%1\n%2 | %3 | %4").arg(title, mode, country, status));
+        item->setData(Qt::UserRole, o.value("id").toInt());
+        item->setData(Qt::UserRole + 1,
+                      tr("Puesto: %1\nDescripción: %2\nSkills: %3\nExperiencia mínima: %4\nModalidad: %5\nCiudad/País: %6 / %7\nEstado: %8")
+                          .arg(title,
+                               jtext(o, "description"),
+                               jtext(o, "required_skills"),
+                               jtext(o, "min_years_experience"),
+                               mode,
+                               jtext(o, "city"),
+                               country,
+                               status));
+        m_jobsList->addItem(item);
+    }
+    setStatus(tr("Puestos actualizados desde la API y cacheados localmente."));
 }
 
-void UserWindow::pushNotification(const QString &text)
+void UserWindow::applyToSelectedJob()
 {
-    if (!m_notificationsList) {
+    auto *item = m_jobsList->currentItem();
+    if (!item) {
+        setStatus(tr("Seleccioná un puesto."), false);
         return;
     }
-    m_notificationsList->insertItem(0, text);
+
+    QJsonObject payload;
+    payload.insert("job_post_id", item->data(Qt::UserRole).toInt());
+
+    bool ok = false;
+    QString error;
+    ApiClient::instance().post("/applications/apply", payload, &ok, &error);
+    if (!ok) {
+        setStatus(tr("No se pudo postular: %1").arg(error), false);
+        return;
+    }
+    LocalDbManager::instance().logAction(ApiClient::instance().username(), "apply_job", tr("Postulación al job_post_id=%1").arg(item->data(Qt::UserRole).toInt()));
+    setStatus(tr("Postulación enviada correctamente."));
+    loadApplications();
+}
+
+void UserWindow::uploadCv()
+{
+    const QString filePath = QFileDialog::getOpenFileName(this, tr("Seleccionar CV"), QString(), tr("CV (*.pdf *.docx)"));
+    if (filePath.isEmpty()) {
+        return;
+    }
+
+    QString error;
+    QJsonObject response;
+    if (!ApiClient::instance().uploadCv(filePath, &error, &response)) {
+        setStatus(tr("No se pudo subir el CV: %1").arg(error), false);
+        return;
+    }
+
+    const QString fileName = response.value("file_name").toString(QFileInfo(filePath).fileName());
+    m_cvList->addItem(tr("%1 | SHA256: %2").arg(fileName, response.value("sha256").toString("-")));
+    LocalDbManager::instance().logAction(ApiClient::instance().username(), "upload_cv", fileName);
+    setStatus(tr("CV subido correctamente."));
+}
+
+QString UserWindow::formatCvAnalysis(const QJsonObject &response) const
+{
+    const QJsonObject analysis = response.value("analysis").toObject(response);
+
+    QString text;
+    text += tr("CV document ID: %1\n").arg(jtext(response, "cv_document_id"));
+    text += tr("Archivo: %1\n").arg(jtext(response, "file_name"));
+    text += tr("Puesto objetivo: %1\n\n").arg(jtext(response, "puesto"));
+
+    text += tr("Resumen:\n%1\n\n").arg(jtext(analysis, "resumen", jtext(analysis, "summary")));
+    text += tr("Nombre detectado: %1\n").arg(jtext(analysis, "nombre"));
+    text += tr("Email detectado: %1\n").arg(jtext(analysis, "email"));
+    text += tr("Teléfono detectado: %1\n").arg(jtext(analysis, "telefono"));
+    text += tr("Seniority: %1\n").arg(jtext(analysis, "seniority"));
+    text += tr("Años de experiencia: %1\n").arg(jtext(analysis, "años_experiencia"));
+    text += tr("Compatibilidad: %1%%\n").arg(jtext(analysis, "compatibilidad", jtext(analysis, "overall_score")));
+    text += tr("Explicación compatibilidad:\n%1\n\n").arg(jtext(analysis, "explicacion_compatibilidad"));
+
+    text += tr("Tecnologías:\n%1\n\n").arg(jtext(analysis, "tecnologias", jtext(analysis, "detected_skills")));
+    text += tr("Idiomas:\n%1\n\n").arg(jtext(analysis, "idiomas"));
+    text += tr("Fortalezas:\n%1\n\n").arg(jtext(analysis, "fortalezas", jtext(analysis, "strengths")));
+    text += tr("Debilidades:\n%1\n\n").arg(jtext(analysis, "debilidades", jtext(analysis, "weak_points")));
+
+    const QString preview = response.value("preview_texto").toString();
+    if (!preview.isEmpty()) {
+        text += tr("Preview texto extraído:\n%1\n").arg(preview.left(1200));
+    }
+
+    return text;
+}
+
+void UserWindow::analyzeCv()
+{
+    const QString puesto = m_cvTargetEdit->text().trimmed();
+    if (puesto.isEmpty()) {
+        setStatus(tr("Indicá un puesto objetivo para que la IA calcule compatibilidad."), false);
+        return;
+    }
+
+    const QString filePath = QFileDialog::getOpenFileName(this, tr("Seleccionar CV para analizar"), QString(), tr("CV/Imagen (*.pdf *.png *.jpg *.jpeg)"));
+    if (filePath.isEmpty()) {
+        return;
+    }
+
+    setStatus(tr("Subiendo y analizando CV con IA. Puede tardar unos segundos..."));
+
+    QString error;
+    QJsonObject response;
+    if (!ApiClient::instance().analyzeCv(filePath, puesto, &error, &response)) {
+        setStatus(tr("No se pudo analizar el CV: %1").arg(error), false);
+        return;
+    }
+
+    const QString fileName = response.value("file_name").toString(QFileInfo(filePath).fileName());
+    m_cvList->addItem(tr("%1 | Analizado con IA | Compatibilidad: %2%%")
+                          .arg(fileName, response.value("analysis").toObject().value("compatibilidad").toVariant().toString()));
+
+    m_cvAnalysisText->setPlainText(formatCvAnalysis(response));
+    LocalDbManager::instance().cacheData("cv_analysis", QString::number(response.value("cv_document_id").toInt()), QJsonDocument(response), ApiClient::instance().currentUser().value("id").toInt(), 24);
+    LocalDbManager::instance().logAction(ApiClient::instance().username(), "analyze_cv", tr("CV=%1 | Puesto=%2").arg(fileName, puesto));
+    setStatus(tr("CV analizado con IA y guardado en VPS + caché local."));
+}
+
+void UserWindow::loadApplications()
+{
+    bool ok = false;
+    QString error;
+    const QJsonDocument doc = ApiClient::instance().get("/applications/my", &ok, &error);
+    if (!ok || !doc.isArray()) {
+        setStatus(tr("Postulaciones: %1").arg(error), false);
+        return;
+    }
+
+    LocalDbManager::instance().cacheData("applications", "my", doc, ApiClient::instance().currentUser().value("id").toInt());
+
+    m_applicationsList->clear();
+    const QJsonArray arr = doc.array();
+    for (const QJsonValue &value : arr) {
+        const QJsonObject o = value.toObject();
+        auto *item = new QListWidgetItem(tr("Postulación #%1\nPuesto ID: %2\nEstado: %3")
+                                             .arg(jtext(o, "id"), jtext(o, "job_post_id"), jtext(o, "status")));
+        item->setData(Qt::UserRole + 1, QString::fromUtf8(QJsonDocument(o).toJson(QJsonDocument::Indented)));
+        m_applicationsList->addItem(item);
+    }
+    setStatus(tr("Postulaciones actualizadas desde la API y cacheadas localmente."));
+}
+
+void UserWindow::loadNotifications()
+{
+    bool ok = false;
+    QString error;
+    const QJsonDocument doc = ApiClient::instance().get("/notifications/my", &ok, &error);
+    if (!ok || !doc.isArray()) {
+        setStatus(tr("Notificaciones: %1").arg(error), false);
+        return;
+    }
+
+    LocalDbManager::instance().cacheData("notifications", "my", doc, ApiClient::instance().currentUser().value("id").toInt());
+
+    m_notificationsList->clear();
+    const QJsonArray arr = doc.array();
+    for (const QJsonValue &value : arr) {
+        const QJsonObject o = value.toObject();
+        auto *item = new QListWidgetItem(tr("%1%2\n%3")
+                                             .arg(o.value("is_read").toBool() ? "[Leída] " : "[Nueva] ",
+                                                  jtext(o, "title"),
+                                                  jtext(o, "message")));
+        item->setData(Qt::UserRole, o.value("id").toInt());
+        m_notificationsList->addItem(item);
+    }
+    setStatus(tr("Notificaciones actualizadas desde la API y cacheadas localmente."));
+}
+
+void UserWindow::markSelectedNotificationRead()
+{
+    auto *item = m_notificationsList->currentItem();
+    if (!item) {
+        setStatus(tr("Seleccioná una notificación."), false);
+        return;
+    }
+
+    const int id = item->data(Qt::UserRole).toInt();
+    bool ok = false;
+    QString error;
+    ApiClient::instance().put(QString("/notifications/read/%1").arg(id), QJsonObject(), &ok, &error);
+    if (!ok) {
+        setStatus(tr("No se pudo marcar como leída: %1").arg(error), false);
+        return;
+    }
+    LocalDbManager::instance().logAction(ApiClient::instance().username(), "notification_read", QString::number(id));
+    loadNotifications();
+}
+
+void UserWindow::sendChatMessage()
+{
+    const QString text = m_chatInput->text().trimmed();
+    if (text.isEmpty()) {
+        return;
+    }
+    m_chatHistory->append(tr("Vos: %1").arg(text));
+    m_chatHistory->append(tr("Sistema: El chat todavía está en modo visual. Falta endpoint FastAPI para responder IA."));
+    m_chatInput->clear();
 }

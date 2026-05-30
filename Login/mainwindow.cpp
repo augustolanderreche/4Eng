@@ -1,56 +1,30 @@
 #include "mainwindow.h"
-#include "registerwindow.h"
-#include "adminwindow.h"
-#include "empresawindow.h"
-#include "userwindow.h"
-#include "databaseconfig.h"
-#include "localdbconfig.h"
 
-#include <QApplication>
+#include "adminwindow.h"
+#include "api_client.h"
+#include "empresawindow.h"
+#include "localdbmanager.h"
+#include "registerwindow.h"
+#include "userwindow.h"
+
+#include <QDateTime>
 #include <QFrame>
 #include <QHBoxLayout>
+#include <QJsonDocument>
+#include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QSqlDatabase>
-#include <QSqlError>
-#include <QSqlQuery>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWidget>
-#include <QTimer>
-#include <QCloseEvent>
-#include <QJsonDocument>
-#include <QJsonArray>
 
 MainWindow::MainWindow(QWidget *parent)
-    : QMainWindow(parent), 
-      m_currentUserId(-1),
-      m_syncTimer(nullptr),
-      m_activityTimer(nullptr)
+    : QMainWindow(parent)
 {
     setupUi();
-    setupDatabase();
     setupLocalDatabase();
-    setupAutoLogin();
-    setupBackgroundSync();
-}
-
-MainWindow::~MainWindow()
-{
-    if (m_syncTimer) {
-        m_syncTimer->stop();
-        m_syncTimer->deleteLater();
-    }
-    if (m_activityTimer) {
-        m_activityTimer->stop();
-        m_activityTimer->deleteLater();
-    }
-    
-    // Sincronizar y cerrar sesión
-    if (m_localDb.isOpen()) {
-        syncOfflineCache();
-        LocalDBConfig::closeSession(m_localDb);
-    }
+    QTimer::singleShot(200, this, &MainWindow::setupAutoLogin);
 }
 
 void MainWindow::setupUi()
@@ -70,19 +44,27 @@ void MainWindow::setupUi()
 
     auto *titleLabel = new QLabel(tr("Iniciar sesión"), loginCard);
     titleLabel->setObjectName("titleLabel");
+
     auto *subtitleLabel = new QLabel(
-        tr("Ingresa tus credenciales y accede. Demo: user_demo/user123, empresa_demo/empresa123, admin_demo/admin123"),
+        tr("Conexión real a la API del VPS. Demo: user_demo/user123, empresa_demo/empresa123, admin_demo/admin123"),
         loginCard);
     subtitleLabel->setObjectName("subtitleLabel");
+    subtitleLabel->setWordWrap(true);
+
+    m_localDbLabel = new QLabel(loginCard);
+    m_localDbLabel->setObjectName("subtitleLabel");
+    m_localDbLabel->setWordWrap(true);
 
     m_loginUserEdit = new QLineEdit(loginCard);
     m_loginUserEdit->setPlaceholderText(tr("Usuario"));
+
     m_loginPassEdit = new QLineEdit(loginCard);
     m_loginPassEdit->setPlaceholderText(tr("Contraseña"));
     m_loginPassEdit->setEchoMode(QLineEdit::Password);
 
     m_loginButton = new QPushButton(tr("Entrar"), loginCard);
     connect(m_loginButton, &QPushButton::clicked, this, &MainWindow::attemptLogin);
+    connect(m_loginPassEdit, &QLineEdit::returnPressed, this, &MainWindow::attemptLogin);
 
     m_openRegisterButton = new QPushButton(tr("Registrar"), loginCard);
     connect(m_openRegisterButton, &QPushButton::clicked, this, &MainWindow::openRegisterWindow);
@@ -92,134 +74,85 @@ void MainWindow::setupUi()
     buttonRow->addWidget(m_loginButton);
     buttonRow->addWidget(m_openRegisterButton);
 
-    loginLayout->addWidget(titleLabel);
-    loginLayout->addWidget(subtitleLabel);
-    loginLayout->addSpacing(10);
-    loginLayout->addWidget(m_loginUserEdit);
-    loginLayout->addWidget(m_loginPassEdit);
-    loginLayout->addLayout(buttonRow);
-    loginCard->setLayout(loginLayout);
-
     m_statusLabel = new QLabel(central);
     m_statusLabel->setStyleSheet("color: #F07178;");
     m_statusLabel->setWordWrap(true);
     m_statusLabel->setAlignment(Qt::AlignCenter);
 
+    loginLayout->addWidget(titleLabel);
+    loginLayout->addWidget(subtitleLabel);
+    loginLayout->addWidget(m_localDbLabel);
+    loginLayout->addSpacing(10);
+    loginLayout->addWidget(m_loginUserEdit);
+    loginLayout->addWidget(m_loginPassEdit);
+    loginLayout->addLayout(buttonRow);
+
     mainLayout->addWidget(loginCard);
     mainLayout->addWidget(m_statusLabel);
 
-    setWindowTitle(tr("Login moderno - QWidgets"));
-    resize(520, 760);
+    setWindowTitle(tr("4eng Login - Qt"));
+    resize(560, 480);
 }
 
-void MainWindow::setupDatabase()
+void MainWindow::setupLocalDatabase()
 {
-    m_db = DatabaseConfig::getLoginConnection();
+    QString error;
+    if (!LocalDbManager::instance().initialize(&error)) {
+        m_localDbLabel->setStyleSheet("color:#F07178;");
+        m_localDbLabel->setText(tr("SQLite local no pudo iniciar: %1").arg(error));
+        return;
+    }
+
+    m_localDbLabel->setStyleSheet("color:#A8E6CF;");
+    m_localDbLabel->setText(tr("SQLite local activo: %1").arg(LocalDbManager::instance().databasePath()));
 }
 
-bool MainWindow::validateCredentials(const QString &username, const QString &password)
+void MainWindow::setupAutoLogin()
 {
-    if (!m_db.isOpen()) {
-        if (!m_db.open()) {
-            m_statusLabel->setText(tr("No se pudo conectar a la base de datos: %1").arg(m_db.lastError().text()));
-            return false;
-        }
+    QJsonObject cachedUser;
+    QString cachedToken;
+    QString error;
+
+    if (!LocalDbManager::instance().getActiveSession(&cachedUser, &cachedToken, &error)) {
+        return;
     }
 
-    QSqlQuery query(m_db);
-    query.prepare("SELECT COUNT(*) FROM users WHERE username = :user AND password = :pass");
-    query.bindValue(":user", username);
-    query.bindValue(":pass", password);
-
-    if (!query.exec()) {
-        m_statusLabel->setText(tr("Error en consulta SQL: %1").arg(query.lastError().text()));
-        return false;
+    if (cachedToken.isEmpty() || cachedUser.isEmpty()) {
+        return;
     }
 
-    if (query.next() && query.value(0).toInt() > 0) {
-        return true;
+    ApiClient::instance().restoreSession(cachedToken, cachedUser);
+
+    // Validamos el token contra el VPS. Si venció, pedimos login normal.
+    bool ok = false;
+    const QJsonDocument doc = ApiClient::instance().get("/auth/me", &ok, &error);
+    if (!ok || !doc.isObject()) {
+        LocalDbManager::instance().logAction(cachedUser.value("username").toString(),
+                                             "session_expired",
+                                             error);
+        LocalDbManager::instance().closeActiveSession();
+        ApiClient::instance().logout();
+        showLoginError(tr("La sesión local existe, pero el token venció. Iniciá sesión nuevamente."));
+        return;
     }
 
-    m_statusLabel->setText(tr("Credenciales inválidas. Revisa usuario y contraseña."));
-    return false;
+    const QJsonObject apiUser = doc.object();
+    QJsonObject userForSession = cachedUser;
+    for (auto it = apiUser.begin(); it != apiUser.end(); ++it) {
+        userForSession.insert(it.key(), it.value());
+    }
+
+    ApiClient::instance().restoreSession(cachedToken, userForSession);
+    LocalDbManager::instance().updateLastActivity();
+    LocalDbManager::instance().logAction(ApiClient::instance().username(), "auto_login", "Sesión recuperada desde SQLite local");
+
+    openWindowByRole(ApiClient::instance().role(), ApiClient::instance().displayName());
 }
 
-bool MainWindow::validateHardcodedDemoLogin(const QString &username, const QString &password,
-                                            QString &role, QString &displayName)
+void MainWindow::showLoginError(const QString &message)
 {
-    if (username == "user_demo" && password == "user123") {
-        role = "Usuario";
-        displayName = "Usuario Demo";
-        return true;
-    }
-    if (username == "empresa_demo" && password == "empresa123") {
-        role = "Empresa";
-        displayName = "Empresa Demo";
-        return true;
-    }
-    if (username == "admin_demo" && password == "admin123") {
-        role = "Admin";
-        displayName = "Admin Demo";
-        return true;
-    }
-    return false;
-}
-
-QString MainWindow::getDisplayName(const QString &username)
-{
-    if (!m_db.isOpen()) {
-        if (!m_db.open()) {
-            return QString();
-        }
-    }
-
-    QSqlQuery query(m_db);
-    query.prepare("SELECT display_name FROM users WHERE username = :user LIMIT 1");
-    query.bindValue(":user", username);
-
-    if (!query.exec() || !query.next()) {
-        return QString();
-    }
-
-    return query.value(0).toString();
-}
-
-QString MainWindow::getRole(const QString &username)
-{
-    if (!m_db.isOpen()) {
-        if (!m_db.open()) {
-            return QString();
-        }
-    }
-
-    QSqlQuery query(m_db);
-    query.prepare("SELECT role FROM users WHERE username = :user LIMIT 1");
-    query.bindValue(":user", username);
-
-    if (!query.exec() || !query.next()) {
-        return QString();
-    }
-
-    return query.value(0).toString();
-}
-
-bool MainWindow::userExists(const QString &username)
-{
-    if (!m_db.isOpen() && !m_db.open()) {
-        m_statusLabel->setText(tr("No se pudo conectar a la base de datos: %1").arg(m_db.lastError().text()));
-        return false;
-    }
-
-    QSqlQuery query(m_db);
-    query.prepare("SELECT COUNT(*) FROM users WHERE username = :user");
-    query.bindValue(":user", username);
-
-    if (!query.exec() || !query.next()) {
-        m_statusLabel->setText(tr("Error al verificar usuario: %1").arg(query.lastError().text()));
-        return false;
-    }
-
-    return query.value(0).toInt() > 0;
+    m_statusLabel->setStyleSheet("color: #F07178;");
+    m_statusLabel->setText(message);
 }
 
 void MainWindow::attemptLogin()
@@ -228,58 +161,50 @@ void MainWindow::attemptLogin()
     const QString password = m_loginPassEdit->text();
 
     if (username.isEmpty() || password.isEmpty()) {
-        m_statusLabel->setText(tr("Completa todos los campos antes de continuar."));
+        showLoginError(tr("Completa usuario y contraseña."));
         return;
     }
 
-    // Verificar si el usuario está bloqueado localmente
-    if (!checkAndHandleFailedAttempts(username)) {
+    QDateTime blockedUntil;
+    QString localError;
+    if (LocalDbManager::instance().isUserBlocked(username, &blockedUntil, &localError)) {
+        const qint64 seconds = QDateTime::currentDateTimeUtc().secsTo(blockedUntil);
+        const int minutes = qMax(1, static_cast<int>((seconds + 59) / 60));
+        LocalDbManager::instance().logAction(username, "login_blocked", tr("Bloqueado por %1 minutos").arg(minutes));
+        showLoginError(tr("Usuario bloqueado localmente por intentos fallidos. Probá de nuevo en %1 minutos.").arg(minutes));
         return;
     }
 
-    // Cuentas demo hardcodeadas para pruebas de interfaz
-    QString demoRole;
-    QString demoDisplayName;
-    if (validateHardcodedDemoLogin(username, password, demoRole, demoDisplayName)) {
-        m_statusLabel->setText(tr("Iniciando sesión demo..."));
-        m_currentUsername = username;
-        if (demoRole == "Empresa") {
-            openEmpresaWindow(demoDisplayName);
-        } else if (demoRole == "Admin") {
-            openAdminWindow(demoDisplayName);
+    m_loginButton->setEnabled(false);
+    m_statusLabel->setStyleSheet("color: #A8E6CF;");
+    m_statusLabel->setText(tr("Conectando con la API..."));
+
+    QString error;
+    if (!ApiClient::instance().login(username, password, &error)) {
+        LocalDbManager::instance().logLoginAttempt(username, false);
+
+        int attemptCount = 0;
+        QDateTime newBlockedUntil;
+        LocalDbManager::instance().incrementFailedAttempts(username, &attemptCount, &newBlockedUntil);
+        LocalDbManager::instance().logAction(username, "login_failed", error);
+
+        m_loginButton->setEnabled(true);
+        if (attemptCount >= 5 && newBlockedUntil.isValid()) {
+            showLoginError(tr("No se pudo iniciar sesión: %1. Usuario bloqueado localmente por 15 minutos.").arg(error));
         } else {
-            openUserWindow(demoDisplayName);
+            showLoginError(tr("No se pudo iniciar sesión: %1. Intentos fallidos: %2/5").arg(error).arg(attemptCount));
         }
         return;
     }
 
-    // Intentar validar contra VPS
-    if (validateCredentials(username, password)) {
-        QString role = getRole(username);
-        QString displayName = getDisplayName(username);
-        if (displayName.isEmpty()) {
-            displayName = username;
-        }
+    LocalDbManager::instance().logLoginAttempt(username, true);
+    LocalDbManager::instance().resetFailedAttempts(username);
+    LocalDbManager::instance().saveSession(ApiClient::instance().currentUser(), ApiClient::instance().token());
+    LocalDbManager::instance().logAction(username, "login", "Login exitoso contra VPS");
 
-        // Guardar sesión en SQLite local
-        m_currentUserId = saveLoginToLocal(username, role, displayName);
-        m_currentUsername = username;
-
-        m_statusLabel->setText(tr("Iniciando sesión..."));
-
-        if (role == tr("Empresa")) {
-            openEmpresaWindow(displayName);
-        } else if (role == tr("Admin")) {
-            openAdminWindow(displayName);
-        } else {
-            openUserWindow(displayName);
-        }
-    } else {
-        // Login fallido: incrementar contador de intentos fallidos
-        LocalDBConfig::incrementFailedAttempts(m_localDb, username);
-        LocalDBConfig::logLoginAttempt(m_localDb, username, false);
-        LocalDBConfig::logAction(m_localDb, username, "login_failed", "Intento de login fallido");
-    }
+    const QString role = ApiClient::instance().role();
+    const QString displayName = ApiClient::instance().displayName();
+    openWindowByRole(role, displayName);
 }
 
 void MainWindow::openRegisterWindow()
@@ -289,159 +214,26 @@ void MainWindow::openRegisterWindow()
     registerWindow->show();
 }
 
-void MainWindow::openEmpresaWindow(const QString &displayName)
+void MainWindow::openWindowByRole(const QString &role, const QString &displayName)
 {
-    auto *empresaWindow = new EmpresaWindow(displayName);
-    empresaWindow->setAttribute(Qt::WA_DeleteOnClose);
-    empresaWindow->show();
-    close();
-}
+    if (role == "Admin") {
+        auto *adminWindow = new AdminWindow(displayName);
+        adminWindow->setAttribute(Qt::WA_DeleteOnClose);
+        adminWindow->show();
+        close();
+        return;
+    }
 
-void MainWindow::openAdminWindow(const QString &displayName)
-{
-    auto *adminWindow = new AdminWindow(displayName);
-    adminWindow->setAttribute(Qt::WA_DeleteOnClose);
-    adminWindow->show();
-    close();
-}
+    if (role == "Empresa") {
+        auto *empresaWindow = new EmpresaWindow(displayName);
+        empresaWindow->setAttribute(Qt::WA_DeleteOnClose);
+        empresaWindow->show();
+        close();
+        return;
+    }
 
-void MainWindow::openUserWindow(const QString &displayName)
-{
     auto *userWindow = new UserWindow(displayName);
     userWindow->setAttribute(Qt::WA_DeleteOnClose);
     userWindow->show();
     close();
-}
-
-void MainWindow::setupLocalDatabase()
-{
-    m_localDb = LocalDBConfig::getLocalConnection();
-    if (!m_localDb.isOpen()) {
-        qWarning() << "Failed to open local database";
-        m_statusLabel->setText(tr("Error: No se pudo abrir base de datos local."));
-    }
-}
-
-void MainWindow::setupAutoLogin()
-{
-    // Intentar recuperar sesión activa
-    QString username, role, displayName;
-    if (LocalDBConfig::getActiveSession(m_localDb, username, role, displayName)) {
-        m_currentUsername = username;
-        qDebug() << "Auto-login successful for:" << username;
-        
-        if (role == "Empresa") {
-            openEmpresaWindow(displayName);
-        } else if (role == "Admin") {
-            openAdminWindow(displayName);
-        } else {
-            openUserWindow(displayName);
-        }
-    }
-}
-
-void MainWindow::setupBackgroundSync()
-{
-    // Timer para sincronización cada 5 minutos
-    m_syncTimer = new QTimer(this);
-    connect(m_syncTimer, &QTimer::timeout, this, &MainWindow::performBackgroundSync);
-    m_syncTimer->start(5 * 60 * 1000); // 5 minutos
-
-    // Timer para rastrear inactividad (30 minutos)
-    m_activityTimer = new QTimer(this);
-    connect(m_activityTimer, &QTimer::timeout, this, [this]() {
-        if (!m_currentUsername.isEmpty()) {
-            qDebug() << "Sesión expirada por inactividad";
-            LocalDBConfig::logAction(m_localDb, m_currentUsername, "session_timeout", "Sesión cerrada por inactividad");
-            LocalDBConfig::closeSession(m_localDb);
-            m_currentUsername = "";
-        }
-    });
-}
-
-void MainWindow::performBackgroundSync()
-{
-    if (!m_currentUsername.isEmpty()) {
-        syncOfflineCache();
-        updateLastActivity();
-    }
-}
-
-void MainWindow::syncOfflineCache()
-{
-    // Esta función descargará datos del VPS y los guardará en caché local
-    // Se ejecutará en background cada 5 minutos
-    
-    if (!m_db.isOpen()) {
-        return;
-    }
-
-    // Aquí iría la lógica de sincronización
-    // Por ahora es un placeholder
-    qDebug() << "Sincronizando caché offline...";
-}
-
-void MainWindow::updateLastActivity()
-{
-    // Actualizar timestamp de última actividad
-    QSqlQuery query(m_localDb);
-    query.prepare("UPDATE sessions SET last_activity = datetime('now') WHERE is_active = 1");
-    query.exec();
-}
-
-void MainWindow::checkAutoLogin()
-{
-    // Implementado en setupAutoLogin
-}
-
-int MainWindow::saveLoginToLocal(const QString &username, const QString &role, const QString &displayName)
-{
-    // Obtener ID del usuario desde el VPS
-    QSqlQuery query(m_db);
-    query.prepare("SELECT id FROM users WHERE username = :user LIMIT 1");
-    query.bindValue(":user", username);
-
-    int userId = -1;
-    if (query.exec() && query.next()) {
-        userId = query.value(0).toInt();
-    }
-
-    if (userId == -1) {
-        qWarning() << "Could not get user ID for:" << username;
-        return -1;
-    }
-
-    // Guardar en SQLite local
-    if (LocalDBConfig::saveSession(m_localDb, userId, username, role, displayName)) {
-        LocalDBConfig::logLoginAttempt(m_localDb, username, true);
-        LocalDBConfig::resetFailedAttempts(m_localDb, username);
-        LocalDBConfig::logAction(m_localDb, username, "login", "Login exitoso");
-        return userId;
-    }
-
-    return -1;
-}
-
-bool MainWindow::checkAndHandleFailedAttempts(const QString &username)
-{
-    QString blockReason;
-    if (LocalDBConfig::isUserBlocked(m_localDb, username, blockReason)) {
-        m_statusLabel->setText(blockReason);
-        LocalDBConfig::logAction(m_localDb, username, "login_blocked", blockReason);
-        return false;
-    }
-
-    return true;
-}
-
-void MainWindow::closeEvent(QCloseEvent *event)
-{
-    // Sincronizar datos antes de cerrar
-    if (m_localDb.isOpen() && !m_currentUsername.isEmpty()) {
-        syncOfflineCache();
-        LocalDBConfig::logAction(m_localDb, m_currentUsername, "app_closed", "Aplicación cerrada");
-        LocalDBConfig::closeSession(m_localDb);
-    }
-
-    event->accept();
 }
