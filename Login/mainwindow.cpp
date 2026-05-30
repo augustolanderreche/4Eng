@@ -127,12 +127,33 @@ void MainWindow::setupAutoLogin()
     bool ok = false;
     const QJsonDocument doc = ApiClient::instance().get("/auth/me", &ok, &error);
     if (!ok || !doc.isObject()) {
+        const QString lowered = error.toLower();
+        const bool invalidToken = lowered.contains("401")
+                                  || lowered.contains("403")
+                                  || lowered.contains("unauthorized")
+                                  || lowered.contains("forbidden")
+                                  || lowered.contains("not authenticated")
+                                  || lowered.contains("expired")
+                                  || lowered.contains(QString::fromUtf8("venci"))
+                                  || lowered.contains("token inval")
+                                  || lowered.contains("invalid token");
+
+        if (invalidToken) {
+            LocalDbManager::instance().logAction(cachedUser.value("username").toString(),
+                                                 "session_expired",
+                                                 error);
+            LocalDbManager::instance().closeActiveSession();
+            ApiClient::instance().logout();
+            showLoginError(tr("La sesión local existe, pero el token venció. Iniciá sesión nuevamente."));
+            return;
+        }
+
+        // Si falla la red o el VPS no responde, conservamos la sesión local.
         LocalDbManager::instance().logAction(cachedUser.value("username").toString(),
-                                             "session_expired",
+                                             "auto_login_offline",
                                              error);
-        LocalDbManager::instance().closeActiveSession();
-        ApiClient::instance().logout();
-        showLoginError(tr("La sesión local existe, pero el token venció. Iniciá sesión nuevamente."));
+        LocalDbManager::instance().updateLastActivity();
+        openWindowByRole(ApiClient::instance().role(), ApiClient::instance().displayName());
         return;
     }
 
@@ -199,7 +220,16 @@ void MainWindow::attemptLogin()
 
     LocalDbManager::instance().logLoginAttempt(username, true);
     LocalDbManager::instance().resetFailedAttempts(username);
-    LocalDbManager::instance().saveSession(ApiClient::instance().currentUser(), ApiClient::instance().token());
+
+    QString sessionError;
+    if (!LocalDbManager::instance().saveSession(ApiClient::instance().currentUser(),
+                                                ApiClient::instance().token(),
+                                                &sessionError)) {
+        m_loginButton->setEnabled(true);
+        showLoginError(tr("Login correcto, pero no se pudo guardar la sesión local SQLite: %1").arg(sessionError));
+        return;
+    }
+
     LocalDbManager::instance().logAction(username, "login", "Login exitoso contra VPS");
 
     const QString role = ApiClient::instance().role();

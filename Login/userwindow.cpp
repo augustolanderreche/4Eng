@@ -2,6 +2,7 @@
 
 #include "api_client.h"
 #include "localdbmanager.h"
+#include "mainwindow.h"
 
 #include <QFileDialog>
 #include <QFileInfo>
@@ -75,6 +76,14 @@ void UserWindow::setupUi(const QString &displayName)
     m_welcomeLabel = new QLabel(tr("Panel Usuario - %1").arg(displayName), central);
     m_welcomeLabel->setStyleSheet("font-size: 18pt; font-weight: 700; color: #f4eefe;");
 
+    auto *logoutButton = new QPushButton(tr("Cerrar sesión"), central);
+    logoutButton->setObjectName("logoutButton");
+    connect(logoutButton, &QPushButton::clicked, this, &UserWindow::handleLogout);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->addWidget(m_welcomeLabel, 1);
+    headerRow->addWidget(logoutButton);
+
     m_statusLabel = new QLabel(central);
     m_statusLabel->setAlignment(Qt::AlignCenter);
     m_statusLabel->setWordWrap(true);
@@ -98,7 +107,7 @@ void UserWindow::setupUi(const QString &displayName)
     contentRow->addWidget(m_menuList);
     contentRow->addWidget(m_contentStack, 1);
 
-    layout->addWidget(m_welcomeLabel);
+    layout->addLayout(headerRow);
     layout->addLayout(contentRow, 1);
     layout->addWidget(m_statusLabel);
 
@@ -255,6 +264,28 @@ QWidget *UserWindow::createChatTab()
     layout->addWidget(m_chatHistory, 1);
     layout->addLayout(row);
     return page;
+}
+
+void UserWindow::handleLogout()
+{
+    QString error;
+    const QString username = ApiClient::instance().username();
+
+    if (!username.isEmpty()) {
+        LocalDbManager::instance().logAction(
+            username,
+            QStringLiteral("logout"),
+            QStringLiteral("Cierre de sesión manual desde panel Usuario"),
+            &error
+        );
+    }
+
+    LocalDbManager::instance().closeActiveSession(&error);
+    ApiClient::instance().logout();
+
+    auto *loginWindow = new MainWindow();
+    loginWindow->show();
+    close();
 }
 
 void UserWindow::loadProfile()

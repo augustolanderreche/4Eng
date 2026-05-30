@@ -2,6 +2,8 @@
 #include "api_client.h"
 #include "empresawindow.h"
 #include "userwindow.h"
+#include "localdbmanager.h"
+#include "mainwindow.h"
 
 #include <QAbstractItemView>
 #include <QDateTime>
@@ -64,7 +66,15 @@ void AdminWindow::setupUi(const QString &displayName)
 
     m_welcomeLabel = new QLabel(tr("Panel Admin - %1").arg(displayName), central);
     m_welcomeLabel->setStyleSheet("font-size: 18pt; font-weight: bold; color: #FFFFFF;");
-    m_welcomeLabel->setAlignment(Qt::AlignCenter);
+    m_welcomeLabel->setAlignment(Qt::AlignVCenter | Qt::AlignLeft);
+
+    auto *logoutButton = new QPushButton(tr("Cerrar sesión"), central);
+    logoutButton->setObjectName("logoutButton");
+    connect(logoutButton, &QPushButton::clicked, this, &AdminWindow::handleLogout);
+
+    auto *headerRow = new QHBoxLayout;
+    headerRow->addWidget(m_welcomeLabel, 1);
+    headerRow->addWidget(logoutButton);
 
     m_statusLabel = new QLabel(central);
     m_statusLabel->setAlignment(Qt::AlignCenter);
@@ -78,7 +88,7 @@ void AdminWindow::setupUi(const QString &displayName)
     m_tabs->addTab(createIaTab(), tr("Gestión IA"));
     m_tabs->addTab(createSystemTab(), tr("Sistema"));
 
-    layout->addWidget(m_welcomeLabel);
+    layout->addLayout(headerRow);
     layout->addWidget(m_tabs, 1);
     layout->addWidget(m_statusLabel);
 
@@ -90,6 +100,28 @@ void AdminWindow::setStatus(const QString &message, bool ok)
 {
     m_statusLabel->setStyleSheet(ok ? "color:#A8E6CF;" : "color:#F07178;");
     m_statusLabel->setText(message);
+}
+
+void AdminWindow::handleLogout()
+{
+    QString error;
+    const QString username = ApiClient::instance().username();
+
+    if (!username.isEmpty()) {
+        LocalDbManager::instance().logAction(
+            username,
+            QStringLiteral("logout"),
+            QStringLiteral("Cierre de sesión manual desde panel Admin"),
+            &error
+        );
+    }
+
+    LocalDbManager::instance().closeActiveSession(&error);
+    ApiClient::instance().logout();
+
+    auto *loginWindow = new MainWindow();
+    loginWindow->show();
+    close();
 }
 
 QWidget *AdminWindow::createDashboardTab()

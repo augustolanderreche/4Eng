@@ -24,6 +24,7 @@ private slots:
     void loadApplications();
     void createJob();
     void sendChatMessage();
+    void handleLogout();
 
 private:
     void setupUi(const QString &displayName);

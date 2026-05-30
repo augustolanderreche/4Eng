@@ -9,6 +9,9 @@
 #include <QStandardPaths>
 #include <QSysInfo>
 #include <QVariant>
+#include <QCoreApplication>
+#include <QDebug>
+#include <QFile>
 
 LocalDbManager &LocalDbManager::instance()
 {
@@ -20,13 +23,20 @@ LocalDbManager::LocalDbManager(QObject *parent)
     : QObject(parent),
       m_connectionName(QStringLiteral("local_4eng_sqlite"))
 {
-    const QString appData = QStandardPaths::writableLocation(QStandardPaths::AppDataLocation);
-    QDir dir(appData);
+    // Para este proyecto/entrega dejamos la base local junto al .exe.
+    // En Qt Creator eso suele ser:
+    // build\Desktop_Qt_...\Debug\debug\local.db
+    // Así es fácil verla, borrarla o demostrarla en clase.
+    QString baseDir = QCoreApplication::applicationDirPath();
+
+    QDir dir(baseDir);
     if (!dir.exists()) {
         dir.mkpath(QStringLiteral("."));
     }
 
     m_databasePath = dir.filePath(QStringLiteral("local.db"));
+
+    qDebug() << "SQLite local DB:" << m_databasePath;
 }
 
 QString LocalDbManager::databasePath() const
@@ -83,6 +93,47 @@ bool LocalDbManager::executeSql(const QString &sql, QString *errorMessage)
     }
 
     QSqlQuery query(QSqlDatabase::database(m_connectionName));
+    if (!query.exec(sql)) {
+        if (errorMessage) {
+            *errorMessage = query.lastError().text();
+        }
+        return false;
+    }
+
+    return true;
+}
+
+
+static bool sqliteColumnExists(const QString &connectionName,
+                               const QString &tableName,
+                               const QString &columnName)
+{
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    query.exec(QStringLiteral("PRAGMA table_info(%1)").arg(tableName));
+
+    while (query.next()) {
+        if (query.value(QStringLiteral("name")).toString() == columnName) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+static bool sqliteEnsureColumn(const QString &connectionName,
+                               const QString &tableName,
+                               const QString &columnName,
+                               const QString &definition,
+                               QString *errorMessage)
+{
+    if (sqliteColumnExists(connectionName, tableName, columnName)) {
+        return true;
+    }
+
+    QSqlQuery query(QSqlDatabase::database(connectionName));
+    const QString sql = QStringLiteral("ALTER TABLE %1 ADD COLUMN %2 %3")
+                            .arg(tableName, columnName, definition);
+
     if (!query.exec(sql)) {
         if (errorMessage) {
             *errorMessage = query.lastError().text();
@@ -181,6 +232,31 @@ bool LocalDbManager::initialize(QString *errorMessage)
         if (!executeSql(script, errorMessage)) {
             return false;
         }
+    }
+
+    // Migraciones suaves para bases local.db creadas por versiones anteriores.
+    // CREATE TABLE IF NOT EXISTS no agrega columnas nuevas sobre tablas ya existentes.
+    // Por eso agregamos explícitamente las columnas que pueden faltar.
+    const QString connectionName = m_connectionName;
+
+    if (!sqliteEnsureColumn(connectionName, "sessions", "email", "TEXT", errorMessage)) {
+        return false;
+    }
+
+    if (!sqliteEnsureColumn(connectionName, "sessions", "access_token", "TEXT", errorMessage)) {
+        return false;
+    }
+
+    if (!sqliteEnsureColumn(connectionName, "sessions", "device_fingerprint", "TEXT", errorMessage)) {
+        return false;
+    }
+
+    if (!sqliteEnsureColumn(connectionName, "sessions", "last_activity", "DATETIME", errorMessage)) {
+        return false;
+    }
+
+    if (!sqliteEnsureColumn(connectionName, "offline_cache", "user_id", "INTEGER", errorMessage)) {
+        return false;
     }
 
     return cleanExpiredCache(errorMessage);

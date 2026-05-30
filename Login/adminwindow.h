@@ -24,6 +24,7 @@ private slots:
     void loadAccepted();
     void loadAiSettings();
     void saveAiSetting();
+    void handleLogout();
 
 private:
     void setupUi(const QString &displayName);

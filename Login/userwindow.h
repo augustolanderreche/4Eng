@@ -27,6 +27,7 @@ private slots:
     void loadNotifications();
     void markSelectedNotificationRead();
     void sendChatMessage();
+    void handleLogout();
 
 private:
     void setupUi(const QString &displayName);
