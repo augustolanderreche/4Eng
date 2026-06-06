@@ -58,8 +58,8 @@ private:
     QPushButton *m_logoutButton;
     QFrame *m_notificationPopup;
     QLabel *m_profileLabel;
-    QLabel *m_jobDetailLabel;
-    QLabel *m_applicationDetailLabel;
+    QTextEdit *m_jobDetailLabel;
+    QTextEdit *m_applicationDetailLabel;
     QListWidget *m_menuList;
     QListWidget *m_cvList;
     QListWidget *m_jobsList;
