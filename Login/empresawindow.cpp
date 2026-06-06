@@ -68,6 +68,50 @@ static QString objText(const QJsonObject &obj, const QString &key, const QString
     return valueToText(obj.value(key), fallback);
 }
 
+static QWidget *createCardWidget(const QString &title, const QString &subtitle, const QString &body)
+{
+    auto *card = new QWidget;
+    auto *layout = new QVBoxLayout(card);
+    layout->setContentsMargins(16, 16, 16, 16);
+    layout->setSpacing(8);
+
+    auto *titleLabel = new QLabel(title, card);
+    titleLabel->setStyleSheet("font-size:11pt; font-weight:700; color:#EAF3FF; border:none; background:transparent;");
+
+    auto *subtitleLabel = new QLabel(subtitle, card);
+    subtitleLabel->setWordWrap(true);
+    subtitleLabel->setStyleSheet("color:#B7D6FF; border:none; background:transparent;");
+
+    auto *bodyLabel = new QLabel(body, card);
+    bodyLabel->setWordWrap(true);
+    bodyLabel->setStyleSheet("color:#E8F3FF; border:none; background:transparent;");
+
+    layout->addWidget(titleLabel);
+    layout->addWidget(subtitleLabel);
+    layout->addWidget(bodyLabel);
+
+    card->setStyleSheet("background:#0b1e3a; border:1px solid #3f6fc4; border-radius:22px;");
+    return card;
+}
+
+static QString formatChatHtml(const QString &text, bool fromCompany)
+{
+    QString formatted = text.toHtmlEscaped();
+    formatted.replace('\n', "<br>");
+    const QString bg = fromCompany ? "#1d3d73" : "#0e2951";
+    const QString border = fromCompany ? "#4b7ccf" : "#3c6bb4";
+    const QString margin = fromCompany ? "0 auto 0 0" : "0 0 0 auto";
+    const QString label = fromCompany ? "Empresa" : "IA";
+
+    return QStringLiteral(
+        "<div style=\"max-width:78%%; margin:%1; padding:6px 0; text-align:%2;\">"
+        "<div style=\"display:inline-block; background:%3; border:1px solid %4; border-radius:20px; padding:14px 18px; color:#E8F2FF; font-size:11pt; line-height:1.5; box-shadow:0 10px 24px rgba(0,0,0,0.16);\">"
+        "<strong style=\"display:block; margin-bottom:8px; color:#DDE9FF;\">%5</strong>%6"
+        "</div>"
+        "</div>"
+    ).arg(margin, fromCompany ? "left" : "right", bg, border, label, formatted);
+}
+
 static qint64 objId(const QJsonObject &obj, const QString &key)
 {
     return obj.value(key).toVariant().toLongLong();
@@ -108,6 +152,17 @@ void EmpresaWindow::setupUi(const QString &displayName)
     auto *central = new QWidget(this);
     setCentralWidget(central);
 
+    central->setStyleSheet(
+        "QWidget { background:#091623; color:#E8F1FF; font-family:'Segoe UI',sans-serif; }"
+        "QPushButton { background:#173f7b; color:#F4F9FF; border:1px solid #4b85d4; border-radius:12px; padding:10px 14px; }"
+        "QPushButton:hover { background:#2a5cb8; }"
+        "QListWidget { background:#0e1f38; color:#E8F1FF; border:1px solid #356dc2; border-radius:14px; }"
+        "QListWidget::item { background:#0f2240; border:1px solid #3f6fc4; border-radius:18px; margin:6px; padding:12px; }"
+        "QListWidget::item:selected { background:#3572cc; color:#FFFFFF; }"
+        "QLineEdit, QTextEdit { background:#0a1730; color:#ECF3FF; border:1px solid #3b6bbf; border-radius:14px; padding:10px; }"
+        "QLabel { color:#E8F1FF; }"
+    );
+
     auto *layout = new QVBoxLayout(central);
     layout->setContentsMargins(24, 24, 24, 24);
     layout->setSpacing(12);
@@ -133,7 +188,7 @@ void EmpresaWindow::setupUi(const QString &displayName)
     m_notificationPopup->setFrameShape(QFrame::StyledPanel);
     m_notificationPopup->setObjectName("notificationPopup");
     m_notificationPopup->setStyleSheet(
-        "QFrame#notificationPopup { background:#1f1f1f; border:1px solid #4a4a4a; border-radius:8px; }"
+        "QFrame#notificationPopup { background:#0f1831; border:1px solid #3c6fbf; border-radius:18px; }"
     );
     m_notificationPopup->setVisible(false);
 
@@ -189,6 +244,12 @@ void EmpresaWindow::setupUi(const QString &displayName)
     });
     m_menuList->setCurrentRow(0);
     m_menuList->setFixedWidth(220);
+    m_menuList->setSpacing(12);
+    m_menuList->setStyleSheet(
+        "QListWidget { background: transparent; border:none; }"
+        "QListWidget::item { background:#0f2240; border:1px solid #3f6fc4; border-radius:18px; padding:12px 10px; margin:4px; color:#E8F1FF; }"
+        "QListWidget::item:selected { background:#3572cc; color:#FFFFFF; }"
+    );
 
     m_contentStack = new QStackedWidget(central);
     m_contentStack->addWidget(createPerfilPage());
@@ -257,17 +318,23 @@ QWidget *EmpresaWindow::createPublicacionesPage()
     buttonRow->addWidget(ranking);
 
     m_publicacionesList = new QListWidget(page);
-    m_publicacionDetailLabel = new QLabel(tr("Seleccioná una publicación para ver detalle."), page);
-    m_publicacionDetailLabel->setWordWrap(true);
+    m_publicacionesList->setSpacing(12);
+    m_publicacionesList->setStyleSheet(
+        "QListWidget::item { background: transparent; border: none; margin:6px; padding:0; }"
+        "QListWidget::item:selected { background: transparent; color:#FFFFFF; }"
+    );
+    m_publicacionDetailLabel = new QTextEdit(page);
+    m_publicacionDetailLabel->setReadOnly(true);
+    m_publicacionDetailLabel->setMinimumHeight(180);
 
     connect(m_publicacionesList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current) {
         if (!current) {
-            m_publicacionDetailLabel->setText(tr("Seleccioná una publicación para ver detalle."));
+            m_publicacionDetailLabel->setPlainText(tr("Seleccioná una publicación para ver detalle."));
             return;
         }
 
         const QJsonObject job = itemJson(current);
-        m_publicacionDetailLabel->setText(formatJobDetail(job));
+        m_publicacionDetailLabel->setPlainText(formatJobDetail(job));
     });
 
     layout->addLayout(buttonRow);
@@ -314,8 +381,14 @@ QWidget *EmpresaWindow::createPostulacionesPage()
     buttonRow->addWidget(message);
 
     m_postulacionesList = new QListWidget(page);
-    m_postulacionDetailLabel = new QLabel(tr("Seleccioná una postulación."), page);
-    m_postulacionDetailLabel->setWordWrap(true);
+    m_postulacionesList->setSpacing(12);
+    m_postulacionesList->setStyleSheet(
+        "QListWidget::item { background: transparent; border: none; margin:6px; padding:0; }"
+        "QListWidget::item:selected { background: transparent; color:#FFFFFF; }"
+    );
+    m_postulacionDetailLabel = new QTextEdit(page);
+    m_postulacionDetailLabel->setReadOnly(true);
+    m_postulacionDetailLabel->setMinimumHeight(240);
 
     m_rankingResultText = new QTextEdit(page);
     m_rankingResultText->setReadOnly(true);
@@ -323,12 +396,12 @@ QWidget *EmpresaWindow::createPostulacionesPage()
 
     connect(m_postulacionesList, &QListWidget::currentItemChanged, this, [this](QListWidgetItem *current) {
         if (!current) {
-            m_postulacionDetailLabel->setText(tr("Seleccioná una postulación."));
+            m_postulacionDetailLabel->setPlainText(tr("Seleccioná una postulación."));
             return;
         }
 
         const QJsonObject application = itemJson(current);
-        m_postulacionDetailLabel->setText(formatApplicationDetail(application));
+        m_postulacionDetailLabel->setPlainText(formatApplicationDetail(application));
     });
 
     layout->addLayout(buttonRow);
@@ -388,14 +461,20 @@ QWidget *EmpresaWindow::createChatPage()
 
     m_chatHistory = new QTextEdit(page);
     m_chatHistory->setReadOnly(true);
-    m_chatHistory->setPlainText(tr("Chat IA conectado. Podés pedir ayuda para evaluar candidatos, preparar entrevistas o redactar mensajes."));
+    m_chatHistory->setHtml(
+        "<div style='font-family:Segoe UI, sans-serif; color:#e7f3ff; background:transparent; padding:12px;'>"
+        "<div style='margin-bottom:16px; padding:18px 22px; background:#0f2141; border:2px solid #3f72cf; border-radius:28px; box-shadow:0 12px 32px rgba(63,114,207,0.18);'>"
+        "<div style='font-size:10pt; font-weight:700; color:#CDE4FF; margin-bottom:10px;'>IA</div>"
+        "Chat IA conectado. Podés pedir ayuda para evaluar candidatos, preparar entrevistas o redactar mensajes."
+        "</div></div>"
+    );
 
     m_chatInput = new QLineEdit(page);
     m_chatInput->setPlaceholderText(tr("Mensaje..."));
 
     m_chatPdfLabel = new QLabel(tr("PDF adjunto: ninguno"), page);
     m_chatPdfLabel->setWordWrap(true);
-    m_chatPdfLabel->setStyleSheet("color:#A7B3C6;");
+    m_chatPdfLabel->setStyleSheet("color:#B7D0FF;");
 
     auto *attach = new QPushButton(tr("Adjuntar PDF"), page);
     auto *send = new QPushButton(tr("Enviar"), page);
@@ -557,22 +636,21 @@ void EmpresaWindow::populateApplications(const QJsonArray &applications)
     for (const QJsonValue &value : applications) {
         const QJsonObject application = value.toObject();
 
-        auto *item = new QListWidgetItem(
-            tr("#%1 | %2\n%3 | Estado: %4")
-                .arg(objText(application, "application_id"),
-                     objText(application, "candidate_name"),
-                     objText(application, "job_title"),
-                     objText(application, "status"))
-        );
+        const QString title = tr("#%1 - %2").arg(objText(application, "application_id"), objText(application, "candidate_name"));
+        const QString subtitle = tr("%1 | Estado: %2").arg(objText(application, "job_title"), objText(application, "status"));
+        const QString body = tr("CV ID: %1\nEmail: %2\nPaís: %3")
+            .arg(objText(application, "cv_document_id"), objText(application, "candidate_email"), objText(application, "candidate_country"));
 
+        auto *item = new QListWidgetItem(m_postulacionesList);
+        item->setSizeHint(QSize(0, 130));
         item->setData(Qt::UserRole, objId(application, "application_id"));
         item->setData(Qt::UserRole + 1, QString::fromUtf8(QJsonDocument(application).toJson(QJsonDocument::Compact)));
-
         m_postulacionesList->addItem(item);
+        m_postulacionesList->setItemWidget(item, createCardWidget(title, subtitle, body));
     }
 
     if (applications.isEmpty()) {
-        m_postulacionDetailLabel->setText(tr("No hay postulantes para mostrar."));
+        m_postulacionDetailLabel->setPlainText(tr("No hay postulantes para mostrar."));
     } else {
         m_postulacionesList->setCurrentRow(0);
     }
@@ -624,19 +702,17 @@ void EmpresaWindow::loadJobs()
     for (const QJsonValue &value : arr) {
         const QJsonObject job = value.toObject();
 
-        auto *item = new QListWidgetItem(
-            tr("#%1 | %2\n%3 | %4 | Postulantes: %5")
-                .arg(objText(job, "id"),
-                     objText(job, "title"),
-                     objText(job, "location_mode"),
-                     objText(job, "status"),
-                     objText(job, "applications_count"))
-        );
+        const QString title = tr("#%1 - %2").arg(objText(job, "id"), objText(job, "title"));
+        const QString subtitle = tr("%1 | %2 | Postulantes: %3").arg(objText(job, "location_mode"), objText(job, "status"), objText(job, "applications_count"));
+        const QString body = tr("Ciudad/País: %1 / %2\nSkills: %3\nDescripción: %4")
+            .arg(objText(job, "city"), objText(job, "country"), objText(job, "required_skills"), objText(job, "description"));
 
+        auto *item = new QListWidgetItem(m_publicacionesList);
+        item->setSizeHint(QSize(0, 140));
         item->setData(Qt::UserRole, objId(job, "id"));
         item->setData(Qt::UserRole + 1, QString::fromUtf8(QJsonDocument(job).toJson(QJsonDocument::Compact)));
-
         m_publicacionesList->addItem(item);
+        m_publicacionesList->setItemWidget(item, createCardWidget(title, subtitle, body));
     }
 
     if (!arr.isEmpty()) {
@@ -972,10 +1048,10 @@ void EmpresaWindow::sendChatMessage()
         return;
     }
 
-    m_chatHistory->append(tr("Empresa: %1").arg(text));
+    m_chatHistory->append(formatChatHtml(text, true));
 
     if (!m_chatPdfPath.isEmpty()) {
-        m_chatHistory->append(tr("PDF adjunto: %1").arg(QFileInfo(m_chatPdfPath).fileName()));
+        m_chatHistory->append(formatChatHtml(tr("PDF adjunto: %1").arg(QFileInfo(m_chatPdfPath).fileName()), true));
     }
 
     m_chatInput->clear();
@@ -999,7 +1075,7 @@ void EmpresaWindow::sendChatMessage()
     );
 
     if (!ok) {
-        m_chatHistory->append(tr("IA: No pude responder en este momento. %1").arg(error));
+        m_chatHistory->append(formatChatHtml(tr("No pude responder en este momento. %1").arg(error), false));
         setStatus(tr("Chat IA: %1").arg(error), false);
         return;
     }
@@ -1010,7 +1086,8 @@ void EmpresaWindow::sendChatMessage()
     const bool fallback = response.value("fallback").toBool(false);
     const QString modelName = response.value("model_name").toString();
 
-    m_chatHistory->append(tr("IA%1: %2").arg(fallback ? QStringLiteral(" (fallback)") : QString(), reply));
+    const QString responseText = fallback ? tr("(fallback) %1").arg(reply) : reply;
+    m_chatHistory->append(formatChatHtml(responseText, false));
 
     if (!modelName.isEmpty()) {
         setStatus(tr("Chat IA respondió usando %1.").arg(modelName));
