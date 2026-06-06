@@ -45,12 +45,6 @@ void MainWindow::setupUi()
     auto *titleLabel = new QLabel(tr("Iniciar sesión"), loginCard);
     titleLabel->setObjectName("titleLabel");
 
-    auto *subtitleLabel = new QLabel(
-        tr("Conexión real a la API del VPS. Demo: user_demo/user123, empresa_demo/empresa123, admin_demo/admin123"),
-        loginCard);
-    subtitleLabel->setObjectName("subtitleLabel");
-    subtitleLabel->setWordWrap(true);
-
     m_localDbLabel = new QLabel(loginCard);
     m_localDbLabel->setObjectName("subtitleLabel");
     m_localDbLabel->setWordWrap(true);
@@ -80,7 +74,6 @@ void MainWindow::setupUi()
     m_statusLabel->setAlignment(Qt::AlignCenter);
 
     loginLayout->addWidget(titleLabel);
-    loginLayout->addWidget(subtitleLabel);
     loginLayout->addWidget(m_localDbLabel);
     loginLayout->addSpacing(10);
     loginLayout->addWidget(m_loginUserEdit);
