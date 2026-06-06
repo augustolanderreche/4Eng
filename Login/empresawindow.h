@@ -84,8 +84,8 @@ private:
     QSet<qint64> m_seenNotificationIds;
     int m_unreadNotifications = 0;
     QLabel *m_profileLabel = nullptr;
-    QLabel *m_publicacionDetailLabel = nullptr;
-    QLabel *m_postulacionDetailLabel = nullptr;
+    QTextEdit *m_publicacionDetailLabel = nullptr;
+    QTextEdit *m_postulacionDetailLabel = nullptr;
 
     QListWidget *m_menuList = nullptr;
     QListWidget *m_publicacionesList = nullptr;
