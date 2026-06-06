@@ -187,7 +187,7 @@ CREATE TABLE `cv_documents` (
   KEY `idx_cv_documents_engineer` (`engineer_user_id`),
   KEY `idx_cv_documents_status` (`status`),
   KEY `idx_cv_documents_active` (`engineer_user_id`, `is_active`),
-  UNIQUE KEY `uq_cv_documents_sha256` (`file_sha256`),
+  KEY `idx_cv_documents_sha256` (`file_sha256`),
   CONSTRAINT `fk_cv_documents_engineer`
     FOREIGN KEY (`engineer_user_id`) REFERENCES `users` (`id`)
     ON DELETE CASCADE ON UPDATE CASCADE
@@ -674,8 +674,8 @@ VALUES
 INSERT INTO `admin_ai_settings`
 (`setting_key`, `setting_value`, `setting_group`, `description`, `updated_by`)
 VALUES
-('AI_MODEL_ACTIVE', 'gpt-4.1-mini', 'MODEL', 'Modelo activo usado por la API de IA.', 1),
-('AI_TEMPERATURE', '0.3', 'MODEL', 'Temperatura para respuestas estables.', 1),
+('AI_MODEL_ACTIVE', 'gpt-5.4-mini', 'MODEL', 'Modelo activo usado por la API de IA.', 1),
+('AI_TEMPERATURE', '1', 'MODEL', 'Temperatura para respuestas estables.', 1),
 ('CV_SUMMARY_ENABLED', 'true', 'FEATURE', 'Habilita resumen de CV por IA.', 1),
 ('CHAT_ENABLED', 'true', 'FEATURE', 'Habilita chatbot para usuario y empresa.', 1),
 ('PROMPT_CV_SUMMARY', 'Resume fortalezas, gaps y recomendacion final para el CV.', 'PROMPT', 'Prompt principal para analisis de CV.', 1),
