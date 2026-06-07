@@ -770,10 +770,37 @@ void EmpresaWindow::loadApplicationsForSelectedJob()
 
 void EmpresaWindow::rankCandidatesForSelectedJob()
 {
-    qint64 jobId = selectedJobId();
+    qint64 jobId = 0;
 
+    /*
+     * Si estoy en la pestaña Postulantes, priorizo la postulación seleccionada.
+     * Esto evita usar por error una publicación seleccionada en la pestaña
+     * "Mis publicaciones".
+     */
+    if (m_menuList && m_menuList->currentRow() == 2) {
+        const QJsonObject application = itemJson(
+            m_postulacionesList ? m_postulacionesList->currentItem() : nullptr
+        );
+
+        jobId = objId(application, "job_post_id");
+    }
+
+    /*
+     * Si no hay postulación seleccionada, uso la publicación seleccionada.
+     */
     if (jobId <= 0) {
-        const QJsonObject application = itemJson(m_postulacionesList ? m_postulacionesList->currentItem() : nullptr);
+        jobId = selectedJobId();
+    }
+
+    /*
+     * Último intento: si hay una postulación seleccionada aunque no estemos
+     * exactamente en la pestaña Postulantes.
+     */
+    if (jobId <= 0) {
+        const QJsonObject application = itemJson(
+            m_postulacionesList ? m_postulacionesList->currentItem() : nullptr
+        );
+
         jobId = objId(application, "job_post_id");
     }
 
@@ -805,6 +832,7 @@ void EmpresaWindow::rankCandidatesForSelectedJob()
 
     m_menuList->setCurrentRow(2);
     loadApplicationsForSelectedJob();
+
     setStatus(tr("Ranking IA generado para publicación #%1.").arg(jobId));
 }
 
