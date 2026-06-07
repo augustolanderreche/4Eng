@@ -1,7 +1,7 @@
 #include "empresawindow.h"
 
 #include "api_client.h"
-#include "localdbmanager.h"
+#include "admindb.h"
 #include "mainwindow.h"
 
 #include <QComboBox>
@@ -26,6 +26,7 @@
 #include <QWidget>
 #include <QFileDialog>
 #include <QFileInfo>
+#include <QCloseEvent>
 
 static QString valueToText(const QJsonValue &value, const QString &fallback = "-")
 {
@@ -276,7 +277,7 @@ void EmpresaWindow::setStatus(const QString &message, bool ok)
 {
     m_statusLabel->setStyleSheet(ok ? "color:#A8E6CF;" : "color:#F07178;");
     m_statusLabel->setText(message);
-    LocalDbManager::instance().updateLastActivity();
+    AdminDB::instance().updateLastActivity();
 }
 
 QWidget *EmpresaWindow::createPerfilPage()
@@ -1128,7 +1129,7 @@ void EmpresaWindow::sendChatMessage()
         m_chatPdfLabel->setText(tr("PDF adjunto: ninguno"));
     }
 
-    LocalDbManager::instance().logAction(
+    AdminDB::instance().logAction(
         ApiClient::instance().username(),
         QStringLiteral("chat_message"),
         QStringLiteral("Mensaje enviado al chat IA desde panel Empresa")
@@ -1167,7 +1168,7 @@ void EmpresaWindow::refreshNotifications(bool showPopupForNew)
         return;
     }
 
-    LocalDbManager::instance().cacheData(
+    AdminDB::instance().cacheData(
         "notifications",
         "my",
         doc,
@@ -1198,7 +1199,7 @@ void EmpresaWindow::refreshNotifications(bool showPopupForNew)
             unreadCount++;
             if (!m_seenNotificationIds.contains(id)) {
                 newUnread.append(o);
-                LocalDbManager::instance().logAction(
+                AdminDB::instance().logAction(
                     ApiClient::instance().username(),
                     "notification_received",
                     QString("ID=%1 | %2").arg(id).arg(objText(o, "title"))
@@ -1289,7 +1290,7 @@ void EmpresaWindow::markSelectedNotificationRead()
         return;
     }
 
-    LocalDbManager::instance().logAction(
+    AdminDB::instance().logAction(
         ApiClient::instance().username(),
         "notification_read",
         QString::number(id)
@@ -1301,20 +1302,31 @@ void EmpresaWindow::markSelectedNotificationRead()
 
 void EmpresaWindow::handleLogout()
 {
+    m_explicitLogout = true;
+
     QString error;
 
-    LocalDbManager::instance().logAction(
+    AdminDB::instance().logAction(
         ApiClient::instance().username(),
         QStringLiteral("logout"),
         QStringLiteral("Cierre de sesión desde panel empresa"),
         &error
     );
 
-    LocalDbManager::instance().closeActiveSession(&error);
+    AdminDB::instance().closeActiveSession(&error);
     ApiClient::instance().logout();
 
     auto *login = new MainWindow();
     login->show();
 
     close();
+}
+
+void EmpresaWindow::closeEvent(QCloseEvent *event)
+{
+    if (!m_explicitLogout && ApiClient::instance().isLoggedIn()) {
+        AdminDB::instance().updateLastActivity(nullptr);
+    }
+
+    QMainWindow::closeEvent(event);
 }

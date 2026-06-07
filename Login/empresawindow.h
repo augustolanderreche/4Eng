@@ -16,6 +16,7 @@ class QTextEdit;
 class QComboBox;
 class QPushButton;
 class QTimer;
+class QCloseEvent;
 
 class EmpresaWindow : public QMainWindow
 {
@@ -46,6 +47,7 @@ private slots:
     void handleLogout();
 
 private:
+    void closeEvent(QCloseEvent *event) override;
     void setupUi(const QString &displayName);
 
     QWidget *createPerfilPage();
@@ -100,6 +102,7 @@ private:
     QString m_chatPdfPath;
 
     QTextEdit *m_rankingResultText = nullptr;
+    bool m_explicitLogout = false;
 
     QLineEdit *m_newPostTitleEdit = nullptr;
     QLineEdit *m_newPostSkillsEdit = nullptr;

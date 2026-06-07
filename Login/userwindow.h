@@ -13,6 +13,7 @@ class QTextEdit;
 class QPushButton;
 class QLineEdit;
 class QTimer;
+class QCloseEvent;
 
 class UserWindow : public QMainWindow
 {
@@ -38,6 +39,7 @@ private slots:
     void chooseChatPdf();
 
 private:
+    void closeEvent(QCloseEvent *event) override;
     void setupUi(const QString &displayName);
     QWidget *createProfileTab();
     QWidget *createCvTab();
@@ -78,6 +80,7 @@ private:
     int m_unreadNotifications;
     qint64 m_chatConversationId = 0;
     QString m_chatPdfPath;
+    bool m_explicitLogout = false;
 };
 
 #endif // USERWINDOW_H

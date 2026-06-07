@@ -1,7 +1,7 @@
 #include "userwindow.h"
 
 #include "api_client.h"
-#include "localdbmanager.h"
+#include "admindb.h"
 #include "mainwindow.h"
 
 #include <QFileDialog>
@@ -25,6 +25,7 @@
 #include <QVBoxLayout>
 #include <QVariant>
 #include <QWidget>
+#include <QCloseEvent>
 
 static QString jsonValueToText(const QJsonValue &value, const QString &fallback = "-")
 {
@@ -238,7 +239,7 @@ void UserWindow::setStatus(const QString &message, bool ok)
 {
     m_statusLabel->setStyleSheet(ok ? "color:#A8E6CF;" : "color:#F07178;");
     m_statusLabel->setText(message);
-    LocalDbManager::instance().updateLastActivity();
+    AdminDB::instance().updateLastActivity();
 }
 
 QWidget *UserWindow::createProfileTab()
@@ -449,7 +450,7 @@ void UserWindow::loadJobs()
     const QJsonDocument doc = ApiClient::instance().get("/jobs/list", &ok, &error);
     if (!ok || !doc.isArray()) {
         bool foundCache = false;
-        const QJsonDocument cached = LocalDbManager::instance().getCachedData("job_posts", "all", ApiClient::instance().currentUser().value("id").toInt(), &foundCache);
+        const QJsonDocument cached = AdminDB::instance().getCachedData("job_posts", "all", ApiClient::instance().currentUser().value("id").toInt(), &foundCache);
         if (foundCache && cached.isArray()) {
             m_jobsList->clear();
             for (const QJsonValue &value : cached.array()) {
@@ -473,7 +474,7 @@ void UserWindow::loadJobs()
         return;
     }
 
-    LocalDbManager::instance().cacheData("job_posts", "all", doc, ApiClient::instance().currentUser().value("id").toInt());
+    AdminDB::instance().cacheData("job_posts", "all", doc, ApiClient::instance().currentUser().value("id").toInt());
 
     m_jobsList->clear();
     const QJsonArray arr = doc.array();
@@ -520,7 +521,7 @@ void UserWindow::applyToSelectedJob()
         setStatus(tr("No se pudo postular: %1").arg(error), false);
         return;
     }
-    LocalDbManager::instance().logAction(ApiClient::instance().username(), "apply_job", tr("Postulación al job_post_id=%1").arg(item->data(Qt::UserRole).toInt()));
+    AdminDB::instance().logAction(ApiClient::instance().username(), "apply_job", tr("Postulación al job_post_id=%1").arg(item->data(Qt::UserRole).toInt()));
     setStatus(tr("Postulación enviada correctamente."));
     loadApplications();
 }
@@ -541,7 +542,7 @@ void UserWindow::uploadCv()
 
     const QString fileName = response.value("file_name").toString(QFileInfo(filePath).fileName());
     m_cvList->addItem(tr("%1 | SHA256: %2").arg(fileName, response.value("sha256").toString("-")));
-    LocalDbManager::instance().logAction(ApiClient::instance().username(), "upload_cv", fileName);
+    AdminDB::instance().logAction(ApiClient::instance().username(), "upload_cv", fileName);
     setStatus(tr("CV subido correctamente."));
 }
 
@@ -603,8 +604,8 @@ void UserWindow::analyzeCv()
                           .arg(fileName, response.value("analysis").toObject().value("compatibilidad").toVariant().toString()));
 
     m_cvAnalysisText->setPlainText(formatCvAnalysis(response));
-    LocalDbManager::instance().cacheData("cv_analysis", QString::number(response.value("cv_document_id").toInt()), QJsonDocument(response), ApiClient::instance().currentUser().value("id").toInt(), 24);
-    LocalDbManager::instance().logAction(ApiClient::instance().username(), "analyze_cv", tr("CV=%1 | Puesto=%2").arg(fileName, puesto));
+    AdminDB::instance().cacheData("cv_analysis", QString::number(response.value("cv_document_id").toInt()), QJsonDocument(response), ApiClient::instance().currentUser().value("id").toInt(), 24);
+    AdminDB::instance().logAction(ApiClient::instance().username(), "analyze_cv", tr("CV=%1 | Puesto=%2").arg(fileName, puesto));
     setStatus(tr("CV analizado con IA y guardado en VPS + caché local."));
 }
 
@@ -618,7 +619,7 @@ void UserWindow::loadApplications()
         return;
     }
 
-    LocalDbManager::instance().cacheData("applications", "my", doc, ApiClient::instance().currentUser().value("id").toInt());
+    AdminDB::instance().cacheData("applications", "my", doc, ApiClient::instance().currentUser().value("id").toInt());
 
     m_applicationsList->clear();
     const QJsonArray arr = doc.array();
@@ -674,7 +675,7 @@ void UserWindow::refreshNotifications(bool showPopupForNew)
         return;
     }
 
-    LocalDbManager::instance().cacheData(
+    AdminDB::instance().cacheData(
         "notifications",
         "my",
         doc,
@@ -714,7 +715,7 @@ void UserWindow::refreshNotifications(bool showPopupForNew)
             unreadCount++;
             if (!m_seenNotificationIds.contains(id)) {
                 newUnread.append(o);
-                LocalDbManager::instance().logAction(
+                AdminDB::instance().logAction(
                     ApiClient::instance().username(),
                     "notification_received",
                     QString("ID=%1 | %2").arg(id).arg(jtext(o, "title"))
@@ -810,28 +811,39 @@ void UserWindow::markSelectedNotificationRead()
         setStatus(tr("No se pudo marcar como leída: %1").arg(error), false);
         return;
     }
-    LocalDbManager::instance().logAction(ApiClient::instance().username(), "notification_read", QString::number(id));
+    AdminDB::instance().logAction(ApiClient::instance().username(), "notification_read", QString::number(id));
     refreshNotifications(false);
 }
 
 void UserWindow::handleLogout()
 {
+    m_explicitLogout = true;
+
     QString error;
 
-    LocalDbManager::instance().logAction(
+    AdminDB::instance().logAction(
         ApiClient::instance().username(),
         QStringLiteral("logout"),
         QStringLiteral("Cierre de sesión desde panel usuario"),
         &error
     );
 
-    LocalDbManager::instance().closeActiveSession(&error);
+    AdminDB::instance().closeActiveSession(&error);
     ApiClient::instance().logout();
 
     auto *login = new MainWindow();
     login->show();
 
     close();
+}
+
+void UserWindow::closeEvent(QCloseEvent *event)
+{
+    if (!m_explicitLogout && ApiClient::instance().isLoggedIn()) {
+        AdminDB::instance().updateLastActivity(nullptr);
+    }
+
+    QMainWindow::closeEvent(event);
 }
 
 
@@ -918,7 +930,7 @@ void UserWindow::sendChatMessage()
         m_chatPdfLabel->setText(tr("PDF adjunto: ninguno"));
     }
 
-    LocalDbManager::instance().logAction(
+    AdminDB::instance().logAction(
         ApiClient::instance().username(),
         QStringLiteral("chat_message"),
         QStringLiteral("Mensaje enviado al chat IA desde panel Usuario")

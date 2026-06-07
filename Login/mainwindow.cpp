@@ -3,14 +3,13 @@
 #include "adminwindow.h"
 #include "api_client.h"
 #include "empresawindow.h"
-#include "localdbmanager.h"
+#include "admindb.h"
 #include "registerwindow.h"
 #include "userwindow.h"
 
 #include <QDateTime>
 #include <QFrame>
 #include <QHBoxLayout>
-#include <QJsonDocument>
 #include <QJsonObject>
 #include <QLabel>
 #include <QLineEdit>
@@ -90,14 +89,14 @@ void MainWindow::setupUi()
 void MainWindow::setupLocalDatabase()
 {
     QString error;
-    if (!LocalDbManager::instance().initialize(&error)) {
+    if (!AdminDB::instance().initialize(&error)) {
         m_localDbLabel->setStyleSheet("color:#F07178;");
         m_localDbLabel->setText(tr("SQLite local no pudo iniciar: %1").arg(error));
         return;
     }
 
     m_localDbLabel->setStyleSheet("color:#A8E6CF;");
-    m_localDbLabel->setText(tr("SQLite local activo: %1").arg(LocalDbManager::instance().databasePath()));
+    m_localDbLabel->setText(tr("SQLite local activo: %1").arg(AdminDB::instance().databasePath()));
 }
 
 void MainWindow::setupAutoLogin()
@@ -106,7 +105,7 @@ void MainWindow::setupAutoLogin()
     QString cachedToken;
     QString error;
 
-    if (!LocalDbManager::instance().getActiveSession(&cachedUser, &cachedToken, &error)) {
+    if (!AdminDB::instance().getActiveSession(&cachedUser, &cachedToken, &error)) {
         return;
     }
 
@@ -115,50 +114,12 @@ void MainWindow::setupAutoLogin()
     }
 
     ApiClient::instance().restoreSession(cachedToken, cachedUser);
-
-    // Validamos el token contra el VPS. Si venció, pedimos login normal.
-    bool ok = false;
-    const QJsonDocument doc = ApiClient::instance().get("/auth/me", &ok, &error);
-    if (!ok || !doc.isObject()) {
-        const QString lowered = error.toLower();
-        const bool invalidToken = lowered.contains("401")
-                                  || lowered.contains("403")
-                                  || lowered.contains("unauthorized")
-                                  || lowered.contains("forbidden")
-                                  || lowered.contains("not authenticated")
-                                  || lowered.contains("expired")
-                                  || lowered.contains(QString::fromUtf8("venci"))
-                                  || lowered.contains("token inval")
-                                  || lowered.contains("invalid token");
-
-        if (invalidToken) {
-            LocalDbManager::instance().logAction(cachedUser.value("username").toString(),
-                                                 "session_expired",
-                                                 error);
-            LocalDbManager::instance().closeActiveSession();
-            ApiClient::instance().logout();
-            showLoginError(tr("La sesión local existe, pero el token venció. Iniciá sesión nuevamente."));
-            return;
-        }
-
-        // Si falla la red o el VPS no responde, conservamos la sesión local.
-        LocalDbManager::instance().logAction(cachedUser.value("username").toString(),
-                                             "auto_login_offline",
-                                             error);
-        LocalDbManager::instance().updateLastActivity();
-        openWindowByRole(ApiClient::instance().role(), ApiClient::instance().displayName());
-        return;
-    }
-
-    const QJsonObject apiUser = doc.object();
-    QJsonObject userForSession = cachedUser;
-    for (auto it = apiUser.begin(); it != apiUser.end(); ++it) {
-        userForSession.insert(it.key(), it.value());
-    }
-
-    ApiClient::instance().restoreSession(cachedToken, userForSession);
-    LocalDbManager::instance().updateLastActivity();
-    LocalDbManager::instance().logAction(ApiClient::instance().username(), "auto_login", "Sesión recuperada desde SQLite local");
+    AdminDB::instance().updateLastActivity();
+    AdminDB::instance().logAction(
+        cachedUser.value("username").toString(),
+        "auto_login",
+        "Sesión recuperada desde SQLite local"
+    );
 
     openWindowByRole(ApiClient::instance().role(), ApiClient::instance().displayName());
 }
@@ -181,10 +142,10 @@ void MainWindow::attemptLogin()
 
     QDateTime blockedUntil;
     QString localError;
-    if (LocalDbManager::instance().isUserBlocked(username, &blockedUntil, &localError)) {
+    if (AdminDB::instance().isUserBlocked(username, &blockedUntil, &localError)) {
         const qint64 seconds = QDateTime::currentDateTimeUtc().secsTo(blockedUntil);
         const int minutes = qMax(1, static_cast<int>((seconds + 59) / 60));
-        LocalDbManager::instance().logAction(username, "login_blocked", tr("Bloqueado por %1 minutos").arg(minutes));
+        AdminDB::instance().logAction(username, "login_blocked", tr("Bloqueado por %1 minutos").arg(minutes));
         showLoginError(tr("Usuario bloqueado localmente por intentos fallidos. Probá de nuevo en %1 minutos.").arg(minutes));
         return;
     }
@@ -195,12 +156,12 @@ void MainWindow::attemptLogin()
 
     QString error;
     if (!ApiClient::instance().login(username, password, &error)) {
-        LocalDbManager::instance().logLoginAttempt(username, false);
+        AdminDB::instance().logLoginAttempt(username, false);
 
         int attemptCount = 0;
         QDateTime newBlockedUntil;
-        LocalDbManager::instance().incrementFailedAttempts(username, &attemptCount, &newBlockedUntil);
-        LocalDbManager::instance().logAction(username, "login_failed", error);
+        AdminDB::instance().incrementFailedAttempts(username, &attemptCount, &newBlockedUntil);
+        AdminDB::instance().logAction(username, "login_failed", error);
 
         m_loginButton->setEnabled(true);
         if (attemptCount >= 5 && newBlockedUntil.isValid()) {
@@ -211,10 +172,14 @@ void MainWindow::attemptLogin()
         return;
     }
 
-    LocalDbManager::instance().logLoginAttempt(username, true);
-    LocalDbManager::instance().resetFailedAttempts(username);
-    LocalDbManager::instance().saveSession(ApiClient::instance().currentUser(), ApiClient::instance().token());
-    LocalDbManager::instance().logAction(username, "login", "Login exitoso contra VPS");
+    AdminDB::instance().logLoginAttempt(username, true);
+    AdminDB::instance().resetFailedAttempts(username);
+    QString sessionError;
+    if (!AdminDB::instance().saveSession(ApiClient::instance().currentUser(), ApiClient::instance().token(), &sessionError)) {
+        AdminDB::instance().logAction(username, "session_save_failed", sessionError);
+        showLoginError(tr("Login exitoso, pero no se pudo guardar sesión local: %1").arg(sessionError));
+    }
+    AdminDB::instance().logAction(username, "login", "Login exitoso contra VPS");
 
     const QString role = ApiClient::instance().role();
     const QString displayName = ApiClient::instance().displayName();

@@ -1,4 +1,4 @@
-#include "localdbmanager.h"
+#include "admindb.h"
 
 #include <QDir>
 #include <QJsonArray>
@@ -13,13 +13,13 @@
 #include <QDebug>
 #include <QFile>
 
-LocalDbManager &LocalDbManager::instance()
+AdminDB &AdminDB::instance()
 {
-    static LocalDbManager manager;
+    static AdminDB manager;
     return manager;
 }
 
-LocalDbManager::LocalDbManager(QObject *parent)
+AdminDB::AdminDB(QObject *parent)
     : QObject(parent),
       m_connectionName(QStringLiteral("local_4eng_sqlite"))
 {
@@ -46,17 +46,17 @@ LocalDbManager::LocalDbManager(QObject *parent)
     qDebug() << "SQLite local DB:" << m_databasePath;
 }
 
-QString LocalDbManager::databasePath() const
+QString AdminDB::databasePath() const
 {
     return m_databasePath;
 }
 
-QString LocalDbManager::nowIso() const
+QString AdminDB::nowIso() const
 {
     return QDateTime::currentDateTimeUtc().toString(Qt::ISODate);
 }
 
-QString LocalDbManager::deviceInfo() const
+QString AdminDB::deviceInfo() const
 {
     return QStringLiteral("%1 | %2 | %3")
         .arg(QSysInfo::prettyProductName(),
@@ -64,7 +64,7 @@ QString LocalDbManager::deviceInfo() const
              QSysInfo::currentCpuArchitecture());
 }
 
-bool LocalDbManager::ensureConnection(QString *errorMessage)
+bool AdminDB::ensureConnection(QString *errorMessage)
 {
     if (QSqlDatabase::contains(m_connectionName)) {
         QSqlDatabase db = QSqlDatabase::database(m_connectionName);
@@ -93,7 +93,7 @@ bool LocalDbManager::ensureConnection(QString *errorMessage)
     return true;
 }
 
-bool LocalDbManager::executeSql(const QString &sql, QString *errorMessage)
+bool AdminDB::executeSql(const QString &sql, QString *errorMessage)
 {
     if (!ensureConnection(errorMessage)) {
         return false;
@@ -110,7 +110,7 @@ bool LocalDbManager::executeSql(const QString &sql, QString *errorMessage)
     return true;
 }
 
-bool LocalDbManager::initialize(QString *errorMessage)
+bool AdminDB::initialize(QString *errorMessage)
 {
     if (!ensureConnection(errorMessage)) {
         return false;
@@ -200,10 +200,51 @@ bool LocalDbManager::initialize(QString *errorMessage)
         }
     }
 
+    QSqlDatabase db = QSqlDatabase::database(m_connectionName);
+    QSqlQuery infoQuery(db);
+    if (!infoQuery.exec(QStringLiteral("PRAGMA table_info(sessions)"))) {
+        if (errorMessage) {
+            *errorMessage = infoQuery.lastError().text();
+        }
+        return false;
+    }
+
+    QStringList sessionColumns;
+    while (infoQuery.next()) {
+        sessionColumns << infoQuery.value(QStringLiteral("name")).toString().toLower();
+    }
+
+    auto ensureSessionColumn = [&](const QString &columnName, const QString &columnType) {
+        if (sessionColumns.contains(columnName.toLower())) {
+            return true;
+        }
+
+        QSqlQuery alterQuery(db);
+        const QString sql = QStringLiteral("ALTER TABLE sessions ADD COLUMN %1 %2")
+                                .arg(columnName, columnType);
+        if (!alterQuery.exec(sql)) {
+            if (errorMessage) {
+                *errorMessage = alterQuery.lastError().text();
+            }
+            return false;
+        }
+
+        sessionColumns << columnName.toLower();
+        return true;
+    };
+
+    if (!ensureSessionColumn(QStringLiteral("email"), QStringLiteral("TEXT"))) {
+        return false;
+    }
+
+    if (!ensureSessionColumn(QStringLiteral("access_token"), QStringLiteral("TEXT"))) {
+        return false;
+    }
+
     return cleanExpiredCache(errorMessage);
 }
 
-bool LocalDbManager::saveSession(const QJsonObject &user,
+bool AdminDB::saveSession(const QJsonObject &user,
                                  const QString &accessToken,
                                  QString *errorMessage)
 {
@@ -223,48 +264,80 @@ bool LocalDbManager::saveSession(const QJsonObject &user,
         return false;
     }
 
-    QSqlQuery query(db);
-    query.prepare(QStringLiteral(R"SQL(
-        INSERT INTO sessions
-            (user_id, username, role, display_name, email, access_token,
-             login_timestamp, last_activity, device_fingerprint, is_active)
-        VALUES
-            (:user_id, :username, :role, :display_name, :email, :access_token,
-             :login_timestamp, :last_activity, :device_fingerprint, 1)
-        ON CONFLICT(username) DO UPDATE SET
-            user_id = excluded.user_id,
-            role = excluded.role,
-            display_name = excluded.display_name,
-            email = excluded.email,
-            access_token = excluded.access_token,
-            login_timestamp = excluded.login_timestamp,
-            last_activity = excluded.last_activity,
-            device_fingerprint = excluded.device_fingerprint,
-            is_active = 1
-    )SQL"));
+    const int userId = user.value(QStringLiteral("id")).toInt(user.value(QStringLiteral("user_id")).toInt());
+    const QString username = user.value(QStringLiteral("username")).toString();
+    const QString role = user.value(QStringLiteral("role")).toString();
+    const QString displayName = user.value(QStringLiteral("display_name")).toString();
+    const QString email = user.value(QStringLiteral("email")).toString();
+    const QString now = nowIso();
+    const QString fingerprint = deviceInfo();
+    const auto esc = [](const QString &value) {
+        QString out = value;
+        out.replace('"', "''");
+        return out;
+    };
 
-    query.bindValue(QStringLiteral(":user_id"), user.value(QStringLiteral("id")).toInt(user.value(QStringLiteral("user_id")).toInt()));
-    query.bindValue(QStringLiteral(":username"), user.value(QStringLiteral("username")).toString());
-    query.bindValue(QStringLiteral(":role"), user.value(QStringLiteral("role")).toString());
-    query.bindValue(QStringLiteral(":display_name"), user.value(QStringLiteral("display_name")).toString());
-    query.bindValue(QStringLiteral(":email"), user.value(QStringLiteral("email")).toString());
-    query.bindValue(QStringLiteral(":access_token"), accessToken);
-    query.bindValue(QStringLiteral(":login_timestamp"), nowIso());
-    query.bindValue(QStringLiteral(":last_activity"), nowIso());
-    query.bindValue(QStringLiteral(":device_fingerprint"), deviceInfo());
+    QSqlQuery updateQuery(db);
+    const QString updateSql = QStringLiteral(
+        "UPDATE sessions "
+        "SET user_id = %1, "
+        "role = '%2', "
+        "display_name = '%3', "
+        "email = '%4', "
+        "access_token = '%5', "
+        "login_timestamp = '%6', "
+        "last_activity = '%7', "
+        "device_fingerprint = '%8', "
+        "is_active = 1 "
+        "WHERE username = '%9'")
+        .arg(userId)
+        .arg(esc(role))
+        .arg(esc(displayName))
+        .arg(esc(email))
+        .arg(esc(accessToken))
+        .arg(esc(now))
+        .arg(esc(now))
+        .arg(esc(fingerprint))
+        .arg(esc(username));
 
-    if (!query.exec()) {
+    if (!updateQuery.exec(updateSql)) {
         if (errorMessage) {
-            *errorMessage = query.lastError().text();
+            *errorMessage = QStringLiteral("saveSession/update: %1").arg(updateQuery.lastError().text());
         }
         db.rollback();
         return false;
     }
 
+    if (updateQuery.numRowsAffected() == 0) {
+        QSqlQuery insertQuery(db);
+        const QString insertSql = QStringLiteral(
+            "INSERT INTO sessions "
+            "(user_id, username, role, display_name, email, access_token, "
+            "login_timestamp, last_activity, device_fingerprint, is_active) "
+            "VALUES (%1, '%2', '%3', '%4', '%5', '%6', '%7', '%8', '%9', 1)")
+            .arg(userId)
+            .arg(esc(username))
+            .arg(esc(role))
+            .arg(esc(displayName))
+            .arg(esc(email))
+            .arg(esc(accessToken))
+            .arg(esc(now))
+            .arg(esc(now))
+            .arg(esc(fingerprint));
+
+        if (!insertQuery.exec(insertSql)) {
+            if (errorMessage) {
+                *errorMessage = QStringLiteral("saveSession/insert: %1").arg(insertQuery.lastError().text());
+            }
+            db.rollback();
+            return false;
+        }
+    }
+
     return db.commit();
 }
 
-bool LocalDbManager::getActiveSession(QJsonObject *user,
+bool AdminDB::getActiveSession(QJsonObject *user,
                                       QString *accessToken,
                                       QString *errorMessage)
 {
@@ -281,7 +354,7 @@ bool LocalDbManager::getActiveSession(QJsonObject *user,
 
     QSqlQuery query(QSqlDatabase::database(m_connectionName));
     query.prepare(QStringLiteral(R"SQL(
-        SELECT user_id, username, role, display_name, email, access_token
+        SELECT user_id, username, role, display_name, email, access_token, last_activity
         FROM sessions
         WHERE is_active = 1
         ORDER BY login_timestamp DESC
@@ -296,6 +369,17 @@ bool LocalDbManager::getActiveSession(QJsonObject *user,
     }
 
     if (!query.next()) {
+        return false;
+    }
+
+    const QDateTime lastActivity = QDateTime::fromString(query.value(QStringLiteral("last_activity")).toString(), Qt::ISODate);
+    const QDateTime nowUtc = QDateTime::currentDateTimeUtc();
+
+    if (!lastActivity.isValid() || lastActivity.secsTo(nowUtc) > (kSessionTimeoutMinutes * 60)) {
+        closeActiveSession(nullptr);
+        if (errorMessage && !lastActivity.isValid()) {
+            *errorMessage = QStringLiteral("Sesión local inválida");
+        }
         return false;
     }
 
@@ -317,7 +401,7 @@ bool LocalDbManager::getActiveSession(QJsonObject *user,
     return true;
 }
 
-bool LocalDbManager::closeActiveSession(QString *errorMessage)
+bool AdminDB::closeActiveSession(QString *errorMessage)
 {
     if (!ensureConnection(errorMessage)) {
         return false;
@@ -334,7 +418,7 @@ bool LocalDbManager::closeActiveSession(QString *errorMessage)
     return true;
 }
 
-bool LocalDbManager::updateLastActivity(QString *errorMessage)
+bool AdminDB::updateLastActivity(QString *errorMessage)
 {
     if (!ensureConnection(errorMessage)) {
         return false;
@@ -354,7 +438,7 @@ bool LocalDbManager::updateLastActivity(QString *errorMessage)
     return true;
 }
 
-bool LocalDbManager::logLoginAttempt(const QString &username,
+bool AdminDB::logLoginAttempt(const QString &username,
                                      bool success,
                                      QString *errorMessage)
 {
@@ -383,7 +467,7 @@ bool LocalDbManager::logLoginAttempt(const QString &username,
     return true;
 }
 
-bool LocalDbManager::isUserBlocked(const QString &username,
+bool AdminDB::isUserBlocked(const QString &username,
                                    QDateTime *blockedUntil,
                                    QString *errorMessage)
 {
@@ -430,7 +514,7 @@ bool LocalDbManager::isUserBlocked(const QString &username,
     return true;
 }
 
-bool LocalDbManager::incrementFailedAttempts(const QString &username,
+bool AdminDB::incrementFailedAttempts(const QString &username,
                                              int *attemptCount,
                                              QDateTime *blockedUntil,
                                              QString *errorMessage)
@@ -502,7 +586,7 @@ bool LocalDbManager::incrementFailedAttempts(const QString &username,
     return true;
 }
 
-bool LocalDbManager::resetFailedAttempts(const QString &username,
+bool AdminDB::resetFailedAttempts(const QString &username,
                                          QString *errorMessage)
 {
     if (!ensureConnection(errorMessage)) {
@@ -532,7 +616,7 @@ bool LocalDbManager::resetFailedAttempts(const QString &username,
     return true;
 }
 
-bool LocalDbManager::logAction(const QString &username,
+bool AdminDB::logAction(const QString &username,
                                const QString &action,
                                const QString &details,
                                QString *errorMessage)
@@ -561,7 +645,7 @@ bool LocalDbManager::logAction(const QString &username,
     return true;
 }
 
-bool LocalDbManager::cacheData(const QString &cacheType,
+bool AdminDB::cacheData(const QString &cacheType,
                                const QString &cacheKey,
                                const QJsonDocument &data,
                                int userId,
@@ -600,7 +684,7 @@ bool LocalDbManager::cacheData(const QString &cacheType,
     return true;
 }
 
-QJsonDocument LocalDbManager::getCachedData(const QString &cacheType,
+QJsonDocument AdminDB::getCachedData(const QString &cacheType,
                                             const QString &cacheKey,
                                             int userId,
                                             bool *found,
@@ -647,7 +731,7 @@ QJsonDocument LocalDbManager::getCachedData(const QString &cacheType,
     return QJsonDocument::fromJson(query.value(0).toString().toUtf8());
 }
 
-bool LocalDbManager::cleanExpiredCache(QString *errorMessage)
+bool AdminDB::cleanExpiredCache(QString *errorMessage)
 {
     if (!ensureConnection(errorMessage)) {
         return false;
@@ -667,7 +751,7 @@ bool LocalDbManager::cleanExpiredCache(QString *errorMessage)
     return true;
 }
 
-QStringList LocalDbManager::getLastSuccessfulLogins(const QString &username,
+QStringList AdminDB::getLastSuccessfulLogins(const QString &username,
                                                     int limit,
                                                     QString *errorMessage)
 {

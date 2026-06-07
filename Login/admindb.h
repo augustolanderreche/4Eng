@@ -1,5 +1,5 @@
-#ifndef LOCALDBMANAGER_H
-#define LOCALDBMANAGER_H
+#ifndef ADMINDB_H
+#define ADMINDB_H
 
 #include <QDateTime>
 #include <QJsonDocument>
@@ -8,12 +8,12 @@
 #include <QString>
 #include <QStringList>
 
-class LocalDbManager : public QObject
+class AdminDB : public QObject
 {
     Q_OBJECT
 
 public:
-    static LocalDbManager &instance();
+    static AdminDB &instance();
 
     QString databasePath() const;
 
@@ -71,7 +71,9 @@ public:
                                         QString *errorMessage = nullptr);
 
 private:
-    explicit LocalDbManager(QObject *parent = nullptr);
+    explicit AdminDB(QObject *parent = nullptr);
+
+    static constexpr int kSessionTimeoutMinutes = 5;
 
     QString nowIso() const;
     QString deviceInfo() const;
@@ -82,4 +84,4 @@ private:
     QString m_databasePath;
 };
 
-#endif // LOCALDBMANAGER_H
+#endif // ADMINDB_H

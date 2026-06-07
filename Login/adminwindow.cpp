@@ -1,5 +1,6 @@
 #include "adminwindow.h"
 
+#include "admindb.h"
 #include "api_client.h"
 #include "empresawindow.h"
 #include "userwindow.h"
@@ -27,6 +28,7 @@
 #include <QVBoxLayout>
 #include <QVariant>
 #include <QWidget>
+#include <QCloseEvent>
 
 static QString valueToText(const QJsonValue &value)
 {
@@ -118,6 +120,15 @@ void AdminWindow::setStatus(const QString &message, bool ok)
 {
     m_statusLabel->setStyleSheet(ok ? "color:#A8E6CF;" : "color:#F07178;");
     m_statusLabel->setText(message);
+}
+
+void AdminWindow::closeEvent(QCloseEvent *event)
+{
+    if (ApiClient::instance().isLoggedIn()) {
+        AdminDB::instance().updateLastActivity(nullptr);
+    }
+
+    QMainWindow::closeEvent(event);
 }
 
 int AdminWindow::selectedId(QTableWidget *table) const

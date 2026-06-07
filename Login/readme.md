@@ -28,7 +28,7 @@ La app combina:
 
 - Implementa la ventana de login principal.
 - Maneja el formulario de usuario y contraseña.
-- Usa `LocalDbManager` para inicializar SQLite local.
+- Usa `AdminDB` para inicializar SQLite local.
 - Soporta auto-login con sesión almacenada.
 - Envía el usuario a la ventana correcta según su rol.
 
@@ -83,7 +83,7 @@ La app combina:
 
 - Cada ventana es una clase propia derivada de `QMainWindow`.
 - La lógica de UI, eventos y actualizaciones queda contenida dentro de cada clase.
-- `ApiClient` y `LocalDbManager` actúan como servicios separados.
+- `ApiClient` y `AdminDB` actúan como servicios separados.
 
 ### Responsabilidad única
 
@@ -91,7 +91,7 @@ La app combina:
 - `UserWindow` gestiona la experiencia del postulante.
 - `EmpresaWindow` gestiona la experiencia de la empresa.
 - `ApiClient` maneja las llamadas HTTP y autenticación.
-- `LocalDbManager` maneja la persistencia local en SQLite.
+- `AdminDB` maneja la persistencia local en SQLite.
 
 ### Reutilización y funciones auxiliares
 

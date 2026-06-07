@@ -9,6 +9,7 @@ class QLineEdit;
 class QTableWidget;
 class QTabWidget;
 class QTextEdit;
+class QCloseEvent;
 
 class AdminWindow : public QMainWindow
 {
@@ -34,6 +35,7 @@ private slots:
     void showSelectedCompanyDetail();
 
 private:
+    void closeEvent(QCloseEvent *event) override;
     void setupUi(const QString &displayName);
     QWidget *createDashboardTab();
     QWidget *createUsersTab();

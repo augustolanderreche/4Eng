@@ -7,7 +7,7 @@ TEMPLATE = app
 SOURCES += \
     main.cpp \
     api_client.cpp \
-    localdbmanager.cpp \
+    admindb.cpp \
     mainwindow.cpp \
     registerwindow.cpp \
     adminwindow.cpp \
@@ -16,7 +16,7 @@ SOURCES += \
 
 HEADERS += \
     api_client.h \
-    localdbmanager.h \
+    admindb.h \
     adminwindow.h \
     empresawindow.h \
     mainwindow.h \
