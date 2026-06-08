@@ -212,11 +212,17 @@
 ┌─────────────────────────────────────────────────────────┐
 │           Desktop Application (Qt/C++)                  │
 │  (Login, UserWindow, EmpresaWindow, AdminWindow)        │
+│                  SQLite (caché local)                   │
 └────────────────────┬────────────────────────────────────┘
-                     │ HTTP/REST
+                     │ HTTPS (puerto 443)
                      │
 ┌────────────────────▼────────────────────────────────────┐
-│         Backend API (FastAPI/Python)                    │
+│             Nginx (Proxy Reverso / TLS)                 │
+└────────────────────┬────────────────────────────────────┘
+                     │ HTTP/REST 
+                     │
+┌────────────────────▼────────────────────────────────────┐
+│         Backend API (FastAPI/Python - Uvicorn)          │
 │  ┌────────────────┐  ┌──────────────┐  ┌─────────────┐  │
 │  │ Authentication │  │ Job Mgmt     │  │ Applications│  │
 │  ├────────────────┤  ├──────────────┤  ├─────────────┤  │
@@ -228,8 +234,6 @@
         │ MySQL/MariaDB│      │ OpenAI API GPT-4.5│
         │   (BD)       │      │   (IA Analysis)   │
         └──────────────┘      └───────────────────┘
-
-Local: SQLite para caché y sesiones
 ```
 
 ---
